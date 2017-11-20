@@ -1,25 +1,27 @@
 /**
- * Sensor Receiver Station
- * 1.0 - 11/19/17 - A.T. - Original
+   Sensor Receiver Station
+   1.0 - 11/19/17 - A.T. - Original
+   1.1 - 11/19/17 - A.T. - Display info on built-in LCD
 */
 
 /**
- * Receiver hub for various sensor transmitting modules. 
- * Uses Anaren CC110L BoosterPacks
- * 
- * Currently defined transmitters
- * - Outdoor weather station using SENSORHUB BoosterPack
- * - Simple temp monitor using MSP430G2553 internal sensor
- * - Other transmitters may be defined in the future
- * 
- * The receiving station code needs to be modified whenever
- * a new sensor is added:
- * - Sensor CC110L device address
- * - Data payload structure
- * - Output stream (Serial, LCD, and/or IP)
+   Receiver hub for various sensor transmitting modules.
+   Uses Anaren CC110L BoosterPacks
+
+   Currently defined transmitters
+   - Outdoor weather station using SENSORHUB BoosterPack
+   - Simple temp monitor using MSP430G2553 internal sensor
+   - Other transmitters may be defined in the future
+
+   The receiving station code needs to be modified whenever
+   a new sensor is added:
+   - Sensor CC110L device address
+   - Data payload structure
+   - Output stream (Serial, LCD, and/or IP)
 */
 #include <SPI.h>
 #include <AIR430BoostFCC.h>
+#include "LCD_Launchpad.h"
 
 // -----------------------------------------------------------------------------
 
@@ -64,6 +66,7 @@ struct G2Sensor {
 
 WeatherData weatherdata;
 G2Sensor sensordata;
+LCD_LAUNCHPAD myLCD;
 
 void setup()
 {
@@ -81,6 +84,8 @@ void setup()
   digitalWrite(RED_LED, HIGH);
   delay(500);
   digitalWrite(RED_LED, LOW);
+
+  myLCD.init();
 }
 
 void loop()
@@ -94,10 +99,10 @@ void loop()
 
   if (packetSize > 0)
   {
+    digitalWrite(RED_LED, HIGH);
     Serial.println("--");
     if (rxPacket.from == ADDRESS_WEATHER) {
       memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
-      digitalWrite(RED_LED, HIGH);
       Serial.print("From device: ");
       Serial.print(rxPacket.from);
       Serial.print(", bytes: ");
@@ -146,6 +151,10 @@ void loop()
       Serial.println(weatherdata.Millis);
       Serial.print("Resets: ");
       Serial.println(weatherdata.Resets);
+
+      displayTempOnLCD(weatherdata.BMP180_T);
+      myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+      displayBattOnLCD(weatherdata.Batt_mV);
     }
     if (rxPacket.from == ADDRESS_G2) {
       memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
@@ -168,6 +177,9 @@ void loop()
       Serial.println(sensordata.Loops);
       Serial.print("Millis: ");
       Serial.println(sensordata.Millis);
+      displayTempOnLCD(sensordata.MSP_T);
+      myLCD.showSymbol(LCD_SEG_HEART, 1);
+      displayBattOnLCD(sensordata.Batt_mV);
     }
     Serial.print("RSSI: ");
     Serial.println(Radio.getRssi());
@@ -180,3 +192,43 @@ void loop()
     Serial.println("Nothing received.");
   }
 }
+
+void displayTempOnLCD(int temp) {
+  char tempChar[32];
+  int tempLen;
+  int tempSign;
+
+  if (temp < 0) {
+    tempSign = 1;
+    temp = -temp;
+  } else tempSign = 0;
+  itoa(temp, tempChar, 10);
+  tempLen = strlen(tempChar);
+  myLCD.clear();
+  // Need to add a leading zero if len == 1
+  if (tempLen == 1) {
+    char x = tempChar[0];
+    tempChar[0] = 0;
+    tempChar[1] = x;
+    tempChar[2] = '/0';
+    tempLen = 2;
+  }
+  for (int i = 0; i < tempLen; i++) {
+    myLCD.showChar(tempChar[i], 5 - tempLen + i);
+  }
+  myLCD.showSymbol(LCD_SEG_DOT4, 1);
+  myLCD.showSymbol(LCD_SEG_DEG5, 1);
+  myLCD.showSymbol(LCD_SEG_MINUS1, tempSign);
+}
+
+void displayBattOnLCD(int mV) {
+  if (mV > 3200) myLCD.showSymbol(LCD_SEG_BAT5, 1);
+  if (mV > 3000) myLCD.showSymbol(LCD_SEG_BAT4, 1);
+  if (mV > 2800) myLCD.showSymbol(LCD_SEG_BAT3, 1);
+  if (mV > 2600) myLCD.showSymbol(LCD_SEG_BAT2, 1);
+  if (mV > 2400) myLCD.showSymbol(LCD_SEG_BAT1, 1);
+  if (mV > 2200) myLCD.showSymbol(LCD_SEG_BAT0, 1);
+  myLCD.showSymbol(LCD_SEG_BAT_ENDS, 1);
+  myLCD.showSymbol(LCD_SEG_BAT_POL, 1);
+}
+
