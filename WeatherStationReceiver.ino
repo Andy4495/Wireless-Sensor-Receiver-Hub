@@ -2,6 +2,7 @@
    Sensor Receiver Station
    1.0 - 11/19/17 - A.T. - Original
    1.1 - 11/19/17 - A.T. - Display info on built-in LCD
+   1.2 - 11/20/17 - A.T. - Press PUSH1 to cycle LCD display
 */
 
 /**
@@ -29,6 +30,7 @@
 #define ADDRESS_LOCAL    0x01
 #define ADDRESS_WEATHER  0x02
 #define ADDRESS_G2       0x03
+#define LAST_ADDRESS     0x03
 
 struct sPacket  // CC110L packet structure
 {
@@ -68,6 +70,10 @@ WeatherData weatherdata;
 G2Sensor sensordata;
 LCD_LAUNCHPAD myLCD;
 
+int currentDisplay; //Remember which temp value is on LCD
+int temperatures[LAST_ADDRESS - 1]; // Store last temp value received
+int batteries[LAST_ADDRESS - 1];  // Store last battery reading
+
 void setup()
 {
 
@@ -80,10 +86,17 @@ void setup()
   memset(rxPacket.message, 0, sizeof(rxPacket.message));
   Radio.begin(ADDRESS_LOCAL, CHANNEL_1, POWER_MAX);
 
+  for (int i = 0; i < (LAST_ADDRESS - 2); i++) {
+    temperatures[i] = 0;
+    batteries[i] = 0;
+  }
+
   pinMode(RED_LED, OUTPUT);       // Use red LED to display message reception
   digitalWrite(RED_LED, HIGH);
   delay(500);
   digitalWrite(RED_LED, LOW);
+
+  pinMode(PUSH1, INPUT_PULLUP);
 
   myLCD.init();
 }
@@ -155,6 +168,9 @@ void loop()
       displayTempOnLCD(weatherdata.BMP180_T);
       myLCD.showSymbol(LCD_SEG_CLOCK, 1);
       displayBattOnLCD(weatherdata.Batt_mV);
+      currentDisplay = ADDRESS_WEATHER;
+      temperatures[ADDRESS_WEATHER - 2] = weatherdata.BMP180_T;
+      batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
     }
     if (rxPacket.from == ADDRESS_G2) {
       memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
@@ -180,6 +196,9 @@ void loop()
       displayTempOnLCD(sensordata.MSP_T);
       myLCD.showSymbol(LCD_SEG_HEART, 1);
       displayBattOnLCD(sensordata.Batt_mV);
+      currentDisplay = ADDRESS_G2;
+      temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
+      batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
     }
     Serial.print("RSSI: ");
     Serial.println(Radio.getRssi());
@@ -190,6 +209,24 @@ void loop()
   }
   else {
     Serial.println("Nothing received.");
+  }
+
+  if (digitalRead(PUSH1) == 0) {
+    myLCD.clear();
+    currentDisplay++;
+    if (currentDisplay > LAST_ADDRESS) currentDisplay = 2;
+    displayTempOnLCD(temperatures[currentDisplay - 2]);
+    displayBattOnLCD(batteries[currentDisplay - 2]);
+    switch (currentDisplay) {
+      case ADDRESS_WEATHER:
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        break;
+      case ADDRESS_G2:
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        break;
+      default:
+        break;
+    }
   }
 }
 
