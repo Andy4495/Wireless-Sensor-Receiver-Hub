@@ -3,6 +3,10 @@
    1.0 - 11/19/17 - A.T. - Original
    1.1 - 11/19/17 - A.T. - Display info on built-in LCD
    1.2 - 11/20/17 - A.T. - Press PUSH1 to cycle LCD display
+   1.3 - 11/24/17 - A.T. - Make LED selection with DEFINE
+                         - LCD display controlled with DEFINE
+                         - Moved message processing into switch
+                           statement and function calls.
 */
 
 /**
@@ -19,10 +23,42 @@
    - Sensor CC110L device address
    - Data payload structure
    - Output stream (Serial, LCD, and/or IP)
+**/
+
+/* BOARD CONFIGURATION
+ * -------------------
+ * 
+ * LED to signal received message:
+ * For FR4133: 
+ *    #define BOARD_LED LED2
+ *    (Do not use LED1, as this conflicts with the UART
+ * For FR6989:
+ *    #define BOARD_LED RED_LED  
+ *    or
+ *    #define BOARD_LED GREEN_LED
+ * For other LaunchPads, check the user guides
+ *
+ * When using a LaunchPad with a built-in LCD (FR4133, FR6989):
+ *    #define LCD_ENABLED
+ * On other LaunchPads, comment out the line:
+ *    //#define LCD_ENABLED
+ *    
+ * To enable ethernet and uploading data to MQTT server: 
+ *    #define ETHERNET_ENABLED
+ * Otherwise, comment out the line:
+ *    //#define ETHERNET_ENABLED
 */
+#define BOARD_LED LED2
+#define LCD_ENABLED
+#define ETHERNET_ENABLED
+
 #include <SPI.h>
 #include <AIR430BoostFCC.h>
+
+#ifdef LCD_ENABLED
 #include "LCD_Launchpad.h"
+LCD_LAUNCHPAD myLCD;
+#endif
 
 // -----------------------------------------------------------------------------
 
@@ -68,7 +104,6 @@ struct G2Sensor {
 
 WeatherData weatherdata;
 G2Sensor sensordata;
-LCD_LAUNCHPAD myLCD;
 
 int currentDisplay; //Remember which temp value is on LCD
 int temperatures[LAST_ADDRESS - 1]; // Store last temp value received
@@ -79,8 +114,9 @@ void setup()
 
   // Setup serial for debug printing.
   Serial.begin(9600);
+  Serial.println(" ");
   Serial.println("CC110L receiver");
-  delay(500);
+  delay(1000);
 
   rxPacket.from = 0;
   memset(rxPacket.message, 0, sizeof(rxPacket.message));
@@ -91,14 +127,16 @@ void setup()
     batteries[i] = 0;
   }
 
-  pinMode(RED_LED, OUTPUT);       // Use red LED to display message reception
-  digitalWrite(RED_LED, HIGH);
+  pinMode(BOARD_LED, OUTPUT);       // Use red LED to display message reception
+  digitalWrite(BOARD_LED, HIGH);
   delay(500);
-  digitalWrite(RED_LED, LOW);
+  digitalWrite(BOARD_LED, LOW);
 
   pinMode(PUSH1, INPUT_PULLUP);
 
+#ifdef LCD_ENABLED
   myLCD.init();
+#endif
 }
 
 void loop()
@@ -112,105 +150,45 @@ void loop()
 
   if (packetSize > 0)
   {
-    digitalWrite(RED_LED, HIGH);
+    digitalWrite(BOARD_LED, HIGH);
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_RADIO, 1);
+    myLCD.showSymbol(LCD_SEG_RX, 1);
+#endif
     Serial.println("--");
-    if (rxPacket.from == ADDRESS_WEATHER) {
-      memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
-      Serial.print("From device: ");
-      Serial.print(rxPacket.from);
-      Serial.print(", bytes: ");
-      Serial.println(packetSize);
-      Serial.println("Temperature (F): ");
-      Serial.print("    BMP180:  ");
-      Serial.print(weatherdata.BMP180_T / 10);
-      Serial.print(".");
-      Serial.println(weatherdata.BMP180_T % 10);
-      Serial.print("    TMP106:  ");
-      Serial.print(weatherdata.TMP106_Ti / 10);
-      Serial.print(".");
-      Serial.println(weatherdata.TMP106_Ti % 10);
-      Serial.print("    SHT21:   ");
-      Serial.print(weatherdata.SHT_T / 10);
-      Serial.print(".");
-      Serial.println(weatherdata.SHT_T % 10);
-      Serial.print("    MSP Die: ");
-      Serial.print(weatherdata.MSP_T / 10);
-      Serial.print(".");
-      Serial.println(weatherdata.MSP_T % 10);
-      Serial.print("Pressure (inHg): ");
-      Serial.print(weatherdata.BMP180_P / 100);
-      Serial.print(".");
-      Serial.print((weatherdata.BMP180_P / 10) % 10);
-      Serial.println(weatherdata.BMP180_P % 10);
-      Serial.print("%RH: ");
-      Serial.print(weatherdata.SHT_H / 10);
-      Serial.print(".");
-      Serial.println(weatherdata.SHT_H % 10);
-      Serial.print("Lux: ");
-      Serial.println(weatherdata.LUX);
-      Serial.print("Battery V: ");
-      Serial.print(weatherdata.Batt_mV / 1000);
-      Serial.print(".");
-      Serial.print((weatherdata.Batt_mV / 100) % 10);
-      Serial.print((weatherdata.Batt_mV / 10) % 10);
-      Serial.print(weatherdata.Batt_mV % 10);
-      if (weatherdata.Batt_mV < 2200) {
-        Serial.print("   *** Out of Spec ***");
-      }
-      Serial.println(" ");
-      Serial.print("Loops: ");
-      Serial.println(weatherdata.Loops);
-      Serial.print("Millis: ");
-      Serial.println(weatherdata.Millis);
-      Serial.print("Resets: ");
-      Serial.println(weatherdata.Resets);
+    Serial.print("Received packet from device: ");
+    Serial.print(rxPacket.from);
+    Serial.print(", bytes: ");
+    Serial.println(packetSize);
 
-      displayTempOnLCD(weatherdata.BMP180_T);
-      myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-      displayBattOnLCD(weatherdata.Batt_mV);
-      currentDisplay = ADDRESS_WEATHER;
-      temperatures[ADDRESS_WEATHER - 2] = weatherdata.BMP180_T;
-      batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
+    switch (rxPacket.from) {
+      case (ADDRESS_WEATHER):
+        process_weatherdata();
+        break;
+      case (ADDRESS_G2):
+        process_G2data();
+        break;
+      default:
+        Serial.println("Message received from unknown sensor.");
+        break;
     }
-    if (rxPacket.from == ADDRESS_G2) {
-      memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-      Serial.println("Received packet from G2");
-      Serial.print("Temperature (F): ");
-      Serial.print(sensordata.MSP_T / 10);
-      Serial.print(".");
-      Serial.println(sensordata.MSP_T % 10);
-      Serial.print("Battery V: ");
-      Serial.print(sensordata.Batt_mV / 1000);
-      Serial.print(".");
-      Serial.print((sensordata.Batt_mV / 100) % 10);
-      Serial.print((sensordata.Batt_mV / 10) % 10);
-      Serial.print(sensordata.Batt_mV % 10);
-      if (sensordata.Batt_mV < 2200) {
-        Serial.print("   *** Out of Spec ***");
-      }
-      Serial.println(" ");
-      Serial.print("Loops: ");
-      Serial.println(sensordata.Loops);
-      Serial.print("Millis: ");
-      Serial.println(sensordata.Millis);
-      displayTempOnLCD(sensordata.MSP_T);
-      myLCD.showSymbol(LCD_SEG_HEART, 1);
-      displayBattOnLCD(sensordata.Batt_mV);
-      currentDisplay = ADDRESS_G2;
-      temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
-      batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
-    }
+
     Serial.print("RSSI: ");
     Serial.println(Radio.getRssi());
     Serial.print("LQI: ");
     Serial.println(Radio.getLqi());
     Serial.println(F("--"));
-    digitalWrite(RED_LED, LOW);
+    digitalWrite(BOARD_LED, LOW);
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_RADIO, 0);
+    myLCD.showSymbol(LCD_SEG_RX, 0);
+#endif
   }
   else {
     Serial.println("Nothing received.");
   }
 
+#ifdef LCD_ENABLED
   if (digitalRead(PUSH1) == 0) {
     myLCD.clear();
     currentDisplay++;
@@ -228,8 +206,98 @@ void loop()
         break;
     }
   }
+#endif
 }
 
+void process_weatherdata() {
+  memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
+  Serial.println("Temperature (F): ");
+  Serial.print("    BMP180:  ");
+  Serial.print(weatherdata.BMP180_T / 10);
+  Serial.print(".");
+  Serial.println(weatherdata.BMP180_T % 10);
+  Serial.print("    TMP106:  ");
+  Serial.print(weatherdata.TMP106_Ti / 10);
+  Serial.print(".");
+  Serial.println(weatherdata.TMP106_Ti % 10);
+  Serial.print("    SHT21:   ");
+  Serial.print(weatherdata.SHT_T / 10);
+  Serial.print(".");
+  Serial.println(weatherdata.SHT_T % 10);
+  Serial.print("    MSP Die: ");
+  Serial.print(weatherdata.MSP_T / 10);
+  Serial.print(".");
+  Serial.println(weatherdata.MSP_T % 10);
+  Serial.print("Pressure (inHg): ");
+  Serial.print(weatherdata.BMP180_P / 100);
+  Serial.print(".");
+  Serial.print((weatherdata.BMP180_P / 10) % 10);
+  Serial.println(weatherdata.BMP180_P % 10);
+  Serial.print("%RH: ");
+  Serial.print(weatherdata.SHT_H / 10);
+  Serial.print(".");
+  Serial.println(weatherdata.SHT_H % 10);
+  Serial.print("Lux: ");
+  Serial.println(weatherdata.LUX);
+  Serial.print("Battery V: ");
+  Serial.print(weatherdata.Batt_mV / 1000);
+  Serial.print(".");
+  Serial.print((weatherdata.Batt_mV / 100) % 10);
+  Serial.print((weatherdata.Batt_mV / 10) % 10);
+  Serial.print(weatherdata.Batt_mV % 10);
+  if (weatherdata.Batt_mV < 2200) {
+    Serial.print("   *** Out of Spec ***");
+  }
+  Serial.println(" ");
+  Serial.print("Loops: ");
+  Serial.println(weatherdata.Loops);
+  Serial.print("Millis: ");
+  Serial.println(weatherdata.Millis);
+  Serial.print("Resets: ");
+  Serial.println(weatherdata.Resets);
+
+#ifdef LCD_ENABLED
+  displayTempOnLCD(weatherdata.BMP180_T);
+  myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+  displayBattOnLCD(weatherdata.Batt_mV);
+#endif
+  currentDisplay = ADDRESS_WEATHER;
+  temperatures[ADDRESS_WEATHER - 2] = weatherdata.BMP180_T;
+  batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
+}
+
+void process_G2data() {
+  memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+  Serial.println("Received packet from G2");
+  Serial.print("Temperature (F): ");
+  Serial.print(sensordata.MSP_T / 10);
+  Serial.print(".");
+  Serial.println(sensordata.MSP_T % 10);
+  Serial.print("Battery V: ");
+  Serial.print(sensordata.Batt_mV / 1000);
+  Serial.print(".");
+  Serial.print((sensordata.Batt_mV / 100) % 10);
+  Serial.print((sensordata.Batt_mV / 10) % 10);
+  Serial.print(sensordata.Batt_mV % 10);
+  if (sensordata.Batt_mV < 2200) {
+    Serial.print("   *** Out of Spec ***");
+  }
+  Serial.println(" ");
+  Serial.print("Loops: ");
+  Serial.println(sensordata.Loops);
+  Serial.print("Millis: ");
+  Serial.println(sensordata.Millis);
+#ifdef LCD_ENABLED
+  displayTempOnLCD(sensordata.MSP_T);
+  myLCD.showSymbol(LCD_SEG_HEART, 1);
+  displayBattOnLCD(sensordata.Batt_mV);
+#endif
+  currentDisplay = ADDRESS_G2;
+  temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
+  batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
+}
+
+#ifdef LCD_ENABLED
 void displayTempOnLCD(int temp) {
   char tempChar[32];
   int tempLen;
@@ -268,4 +336,5 @@ void displayBattOnLCD(int mV) {
   myLCD.showSymbol(LCD_SEG_BAT_ENDS, 1);
   myLCD.showSymbol(LCD_SEG_BAT_POL, 1);
 }
+#endif
 
