@@ -9,6 +9,11 @@
                            statement and function calls.
    2.0 - 11/26/17 - A.T. - Added ethernet and MQTT support.
    2.1 - 12/07/17 - A.T. - Moved MQTT config to private header. 
+                         - Added separate control of W5200 RESET 
+                           - Previously tied to MSP430 RST
+                           - This resolves a power-up timing issue
+                             and also allows the MSP to reset the 
+                             ethernet chip if necessary. 
 */
 
 /**
@@ -41,9 +46,8 @@
        - #define updates to support Seeed W5200 Ethernet Shield V2.2
    - MQTT:
        - Adafruit_MQTT.cpp modified to comment out lines 425-431
-         to remove support for floating point subscription messages.
-         In case the line numbers don't match, specifically commented
-         out the block starting with:
+         to remove support for floating point. Specifically, 
+         commented out the block starting with:
             "else if (sub->callback_double != NULL)"
 */
 
@@ -81,6 +85,23 @@
 #define LCD_ENABLED
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
+
+/* CONTROL PIN DEFINITIONS 
+ * -----------------------
+ * 
+ *  W5200_RESET - Connected to RESET on W5200 chip. Active LOW. 
+ *  W5200_CS    - Connected to SCS pin on W5200 chip. Active LOW. 
+ *  CC110L_CS   - Connected to CS pin on CC110L chip. Active LOW.
+ *  
+ *  NOTE: The CS pins are also defined separately in the associated driver
+ *       libraries. Both the driver libraries and the following 
+ *       definitions need to be updated in order to change the pin 
+ *       assignments
+ */
+
+#define W5200_RESET 5
+#define W5200_CS    8
+#define CC110L_CS  18 
 
 #include <SPI.h>
 #include <AIR430BoostFCC.h>
@@ -177,18 +198,27 @@ int  TxStatus = 0;
 /* The MQTT_private_feeds.h file needs to include the following definitions
    specific to your configuration. 
 */
-#include "MQTT_private_feeds.h
+#include "MQTT_private_feeds.h"
 #endif
 
 void setup()
 {
   // Set the CC110L Chip Select High to make sure it doesn't interfere with Ethernet
-  digitalWrite(18, HIGH);
-  pinMode(18, OUTPUT);
+  digitalWrite(CC110L_CS, HIGH);
+  pinMode(CC110L_CS, OUTPUT);
 
   // Set Ethernet Chip Select High to disable before initializing
-  digitalWrite(8, HIGH);
-  pinMode(8, OUTPUT);
+  digitalWrite(W5200_CS, HIGH);
+  pinMode(W5200_CS, OUTPUT);
+
+  // Reset the Ethernet Chip
+  // Pin 5 is connected to RESET on W5200 chip
+  digitalWrite(W5200_RESET, HIGH);
+  pinMode(W5200_RESET, OUTPUT);
+  digitalWrite(W5200_RESET, LOW); // Reset W5200
+  delay(5);           // Needs to be low at least 2 us; we'll go a little longer
+  digitalWrite(W5200_RESET, HIGH); 
+  delay(200);         // RESET needs to be cleared for at least 150 ms before operating
 
   // Setup serial for status printing.
   Serial.begin(9600);
@@ -270,7 +300,7 @@ void loop()
   // Radio.end();
   while (Radio.busy()) ; // Empty loop statement
   detachInterrupt(RF_GDO0);
-  pinMode(18, OUTPUT);    // Need to pull radio CS high to keep it off the SPI bus
+  pinMode(CC110L_CS, OUTPUT);    // Need to pull radio CS high to keep it off the SPI bus
 
   if (packetSize > 0) {
     digitalWrite(BOARD_LED, HIGH);
@@ -524,7 +554,7 @@ void displayBattOnLCD(int mV) {
 // Should be called in the loop function and it will take care of connecting.
 #ifdef ETHERNET_ENABLED
 void MQTT_connect() {
-  int8_t ret;
+  int8_t ret, clientStatus;
 
   // Return if already connected.
   if (mqtt.connected()) {
@@ -543,7 +573,14 @@ void MQTT_connect() {
   printClientStatus();
   Serial.print("Attempting reconnect to MQTT... ");
   ret = mqtt.connect();
-  printClientStatus();
+  clientStatus = printClientStatus();
+  // W5200 chip seems to have a problem of getting stuck in CLOSE_WAIT state
+  // If in CLOSE_WAIT, then force a non-DNS connection to clear
+  if (clientStatus == 0x1c) { // 0x1c == CLOSE_WAIT
+    IPAddress ip(127, 0, 0, 1);
+    client.connect(ip, 1024);
+    client.stop();
+  }
   Serial.println(mqtt.connectErrorString(ret));
 #ifdef LCD_ENABLED
   if (ret == 0) {
