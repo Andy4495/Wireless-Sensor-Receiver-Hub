@@ -43,6 +43,9 @@ Because of the mis-aligned header on the [Arduino UNO layout] (http://forum.ardu
 ![Bottom of board with D10-A2 jumper.] (../jpg/5200-bottom.jpg)
 
 ### Custom Shield-LaunchPad Interface Board ###
+
+- [Schematic] (./Shield-LaunchPad-Interface.pdf)
+
 This board is necessary to provide power to the Sensor Receiver Hub and to route signals between the Ethernet Shield and the LaunchPad, since they use incompatible I/O pin layouts.
 Besides a properly-sized perfboard, you will need:
 
@@ -50,8 +53,7 @@ Besides a properly-sized perfboard, you will need:
 + USB Micro [break-out board] (https://www.sparkfun.com/products/12035)
     + This is for simplicity of using a standard USB wall-wart power supply. A 2-pin header could also be used, depending on your needs.
 + Traco [TSR 1-2433 DC-DC converter] (https://www.mouser.com/ProductDetail/TRACO-Power/TSR-1-2433/?qs=ckJk83FOD0Wr1ojFRJK1OQ%3D%3D)
-    + A cheaper 3.3V linear regulator could also be used, but is not as efficient as the Traco module.
+    + A cheaper 3.3V linear regulator that can provide at least 250 mA could also be used, but is not as efficient as the Traco module.
 
-- [Schematic] (./Shield-LaunchPad-Interface.pdf)
-- ![Bottom of interface board.] (../jpg/interface_bottom.jpg)
-- ![Top of interface board.] (../jpg/interface_top.jpg)
+- ![Bottom of interface board.] (../jpg/interface-bottom.jpg)
+- ![Top of interface board.] (../jpg/interface-top.jpg)
