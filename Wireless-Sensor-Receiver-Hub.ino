@@ -8,12 +8,15 @@
                          - Moved message processing into switch
                            statement and function calls.
    2.0 - 11/26/17 - A.T. - Added ethernet and MQTT support.
-   2.1 - 12/07/17 - A.T. - Moved MQTT config to private header. 
-                         - Added separate control of W5200 RESET 
+   2.1 - 12/07/17 - A.T. - Moved MQTT config to private header.
+                         - Added separate control of W5200 RESET
                            - Previously tied to MSP430 RST
                            - This resolves a power-up timing issue
-                             and also allows the MSP to reset the 
-                             ethernet chip if necessary. 
+                             and also allows the MSP to reset the
+                             ethernet chip if necessary.
+   2.2 - 12/20/17 - A.T. - Reset ethernet board if connection lost
+                           Stop sending BMP180_T to MQTT
+                           Display SHT21_T instead of BMP180_T
 */
 
 /**
@@ -46,7 +49,7 @@
        - #define updates to support Seeed W5200 Ethernet Shield V2.2
    - MQTT:
        - Adafruit_MQTT.cpp modified to comment out lines 425-431
-         to remove support for floating point. Specifically, 
+         to remove support for floating point. Specifically,
          commented out the block starting with:
             "else if (sub->callback_double != NULL)"
 */
@@ -86,22 +89,22 @@
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
-/* CONTROL PIN DEFINITIONS 
- * -----------------------
- * 
- *  W5200_RESET - Connected to RESET on W5200 chip. Active LOW. 
- *  W5200_CS    - Connected to SCS pin on W5200 chip. Active LOW. 
- *  CC110L_CS   - Connected to CS pin on CC110L chip. Active LOW.
- *  
- *  NOTE: The CS pins are also defined separately in the associated driver
- *       libraries. Both the driver libraries and the following 
- *       definitions need to be updated in order to change the pin 
- *       assignments
- */
+/* CONTROL PIN DEFINITIONS
+   -----------------------
+
+    W5200_RESET - Connected to RESET on W5200 chip. Active LOW.
+    W5200_CS    - Connected to SCS pin on W5200 chip. Active LOW.
+    CC110L_CS   - Connected to CS pin on CC110L chip. Active LOW.
+
+    NOTE: The CS pins are also defined separately in the associated driver
+         libraries. Both the driver libraries and the following
+         definitions need to be updated in order to change the pin
+         assignments
+*/
 
 #define W5200_RESET 5
 #define W5200_CS    8
-#define CC110L_CS  18 
+#define CC110L_CS  18
 
 #include <SPI.h>
 #include <AIR430BoostFCC.h>
@@ -177,6 +180,7 @@ struct G2Sensor {
 
 WeatherData weatherdata;
 G2Sensor sensordata;
+int lostConnectionCount = 0;
 
 #ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
@@ -191,12 +195,12 @@ int  TxStatus = 0;
 
 /* MQTT publishing feeds
      Each feed that you wish to publish needs to be defined.
-     Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>, for example: 
+     Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>, for example:
         Adafruit_MQTT_Publish pressure = Adafruit_MQTT_Publish(&mqtt,  AIO_USERNAME "/feeds/pressure");
 */
 #ifdef ETHERNET_ENABLED
 /* The MQTT_private_feeds.h file needs to include the following definitions
-   specific to your configuration. 
+   specific to your configuration.
 */
 #include "MQTT_private_feeds.h"
 #endif
@@ -217,7 +221,7 @@ void setup()
   pinMode(W5200_RESET, OUTPUT);
   digitalWrite(W5200_RESET, LOW); // Reset W5200
   delay(5);           // Needs to be low at least 2 us; we'll go a little longer
-  digitalWrite(W5200_RESET, HIGH); 
+  digitalWrite(W5200_RESET, HIGH);
   delay(200);         // RESET needs to be cleared for at least 150 ms before operating
 
   // Setup serial for status printing.
@@ -420,11 +424,11 @@ void process_weatherdata() {
   Serial.println(weatherdata.Resets);
 
 #ifdef LCD_ENABLED
-  displayTempOnLCD(weatherdata.BMP180_T);
+  displayTempOnLCD(weatherdata.SHT_T);
   myLCD.showSymbol(LCD_SEG_CLOCK, 1);
   displayBattOnLCD(weatherdata.Batt_mV);
   currentDisplay = ADDRESS_WEATHER;
-  temperatures[ADDRESS_WEATHER - 2] = weatherdata.BMP180_T;
+  temperatures[ADDRESS_WEATHER - 2] = weatherdata.SHT_T;
   batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
 #endif
 
@@ -433,9 +437,10 @@ void process_weatherdata() {
   myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
   Serial.println("Sending data to MQTT...");
+  /* BMP180_T sensor appears to be damaged; stop sending data
   if (! Weather_T_BMP180.publish((int32_t)weatherdata.BMP180_T)) {
     Serial.println(F("BMP180T Failed"));
-  }
+  } */
   if (! Weather_T_SHT21.publish((int32_t)weatherdata.SHT_T)) {
     Serial.println(F("SHT21T Failed"));
   }
@@ -575,11 +580,26 @@ void MQTT_connect() {
   ret = mqtt.connect();
   clientStatus = printClientStatus();
   // W5200 chip seems to have a problem of getting stuck in CLOSE_WAIT state
-  // If in CLOSE_WAIT, then force a non-DNS connection to clear
-  if (clientStatus == 0x1c) { // 0x1c == CLOSE_WAIT
-    IPAddress ip(127, 0, 0, 1);
-    client.connect(ip, 1024);
-    client.stop();
+  // There may be other issues, so just force a hard reset on ethernet
+  // shield if we lose connection
+  if (ret != 0) {
+    lostConnectionCount++;
+    Serial.print("Ethernet connection lost #: ");
+    Serial.println(lostConnectionCount);
+    if (lostConnectionCount > 5) {
+      Serial.print("Ethernet connection loss over max: ");
+      Serial.println(lostConnectionCount);
+      lostConnectionCount = 0;
+      client.stop();
+      digitalWrite(W5200_RESET, LOW);
+      delay(2);
+      digitalWrite(W5200_RESET, HIGH);
+      delay(155); // Need to delay at least 150 ms after reset
+      Serial.println("Starting Ethernet...");
+      Ethernet.begin(mac);
+      //  delay(1000);            // Give it a second to initialize
+      Serial.println("Ethernet enabled.");
+    }
   }
   Serial.println(mqtt.connectErrorString(ret));
 #ifdef LCD_ENABLED
