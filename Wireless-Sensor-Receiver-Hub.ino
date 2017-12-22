@@ -17,6 +17,10 @@
    2.2 - 12/20/17 - A.T. - Reset ethernet board if connection lost
                            Stop sending BMP180_T to MQTT
                            Display SHT21_T instead of BMP180_T
+   2.3 - 12/21/17 - A.T. - Add support for Newhaven OLED display:
+                           - Press PUSH2 to temporarily turn on OLED
+                           - OLED displays RSSI, LQI, and seconds since
+                             last message for each sensor.
 */
 
 /**
@@ -47,11 +51,13 @@
    - Ethernet: https://github.com/Wiznet/WIZ_Ethernet_Library
        - Modified to work with Energia
        - #define updates to support Seeed W5200 Ethernet Shield V2.2
-   - MQTT:
+   - MQTT: https://github.com/adafruit/Adafruit_MQTT_Library
        - Adafruit_MQTT.cpp modified to comment out lines 425-431
          to remove support for floating point. Specifically,
          commented out the block starting with:
             "else if (sub->callback_double != NULL)"
+   - NewhavenOLED: https://gitlab.com/Andy4495/NewhavenOLED
+       - Only used if OLED_ENABLED is #defined
 */
 
 /* BOARD CONFIGURATION AND OTHER DEFINES
@@ -72,6 +78,15 @@
    On other LaunchPads, comment out the line:
       //#define LCD_ENABLED
 
+   To use an external Newhaven OLED display:
+      #define OLED_ENABLED
+   Comment out the line if the OLED is not used:
+      //#define OLED_ENABLED
+   The use of an external OLED is entirely optional and just
+   allows the display of some information that is already
+   sent out the serial port and/or MQTT.
+   Using the OLED takes up about 4K additional program space.
+
    To enable ethernet and uploading data to MQTT server:
       #define ETHERNET_ENABLED
       You will also need to set up your various MQTT feeds below.
@@ -86,6 +101,7 @@
 */
 #define BOARD_LED GREEN_LED
 #define LCD_ENABLED
+#define OLED_ENABLED
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
@@ -106,12 +122,45 @@
 #define W5200_CS    8
 #define CC110L_CS  18
 
+/* OLED PIN AND HARDWARE DEFINITIONS
+   ---------------------------------
+   OLED_CS   - Active LOW.
+   OLED_SI   - MOSI data line from MSP to OLED
+   OLED_SCK  - Serial clock line from MSP to OLED
+   OLED_ROWS - # of rows of characters on the OLED
+   OLED_COLS - # of character columns on the OLED
+
+   Note that the OLED library used is a bit-bang SPI implementation,
+   and therefore the OLED is not connected to the SPI bus used
+   by the CC110L and Ethernet shield.
+*/
+
+#define OLED_CS   38
+#define OLED_SI   37
+#define OLED_SCK  36
+#define OLED_ROWS  2
+#define OLED_COLS 16
+
 #include <SPI.h>
 #include <AIR430BoostFCC.h>
 
 #ifdef LCD_ENABLED
 #include "LCD_Launchpad.h"
 LCD_LAUNCHPAD myLCD;
+#endif
+
+#ifdef OLED_ENABLED
+#include <NewhavenOLED.h>
+byte row_address[2] = {0x80, 0xC0};   // DDRAM addresses for rows (2-row models)
+NewhavenOLED oled(OLED_ROWS, OLED_COLS, OLED_SI, OLED_SCK, OLED_CS, NO_PIN);
+byte oled_text[OLED_ROWS][OLED_COLS + 1] =
+{ "Sensor Rx Hub   ",
+  "    Initializing"
+};
+#define WEATHER_ROW 0
+#define G2_ROW 1
+#define DISPLAY_TIMEOUT 7
+int displayTimeoutCount = DISPLAY_TIMEOUT;
 #endif
 
 #ifdef ETHERNET_ENABLED
@@ -169,6 +218,10 @@ struct WeatherData {
   unsigned int    Loops;
   unsigned long   Millis;
   unsigned int    Resets;
+  // Rssi and Lqi are not part of the payload and therefore need to
+  // be at the end of the struct.
+  int             Rssi;
+  int             Lqi;
 };
 
 struct G2Sensor {
@@ -176,11 +229,17 @@ struct G2Sensor {
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
   unsigned long   Millis;
+  // Rssi and Lqi are not part of the payload and therefore need to
+  // be at the end of the struct.
+  int             Rssi;
+  int             Lqi;
 };
 
 WeatherData weatherdata;
 G2Sensor sensordata;
 int lostConnectionCount = 0;
+int lastRssi, lastLqi;
+unsigned long lastG2Millis, lastWeatherMillis;
 
 #ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
@@ -242,6 +301,13 @@ void setup()
   Serial.println("Started LCD display");
 #endif
 
+#ifdef OLED_ENABLED
+  oled.begin();
+  oledDisplay();
+  // Clear out the buffer
+  memset(oled_text, ' ', sizeof(oled_text));
+#endif
+
 #ifdef ETHERNET_ENABLED
   Serial.println("Starting Ethernet...");
   Ethernet.begin(mac);
@@ -250,19 +316,20 @@ void setup()
   MQTT_connect();
 #endif
 
-  // Setup CC110L data sstructure
+  // Setup CC110L data structure
   rxPacket.from = 0;
   memset(rxPacket.message, 0, sizeof(rxPacket.message));
-  /// DEBUG  Serial.println("Start CC110L");
-  /// DEBUG  Radio.begin(ADDRESS_LOCAL, CHANNEL_1, POWER_MAX);
-  /// DEBUG  SPI.end();
 
   pinMode(BOARD_LED, OUTPUT);       // Use red LED to display message reception
   digitalWrite(BOARD_LED, HIGH);
   delay(500);
   digitalWrite(BOARD_LED, LOW);
 
-  pinMode(PUSH1, INPUT_PULLUP);
+  pinMode(PUSH1, INPUT_PULLUP);     // PUSH1 cycles LCD display
+  pinMode(PUSH2, INPUT_PULLUP);     // PUSH2 temporarily turns on OLED
+
+  lastG2Millis = millis();
+  lastWeatherMillis = lastG2Millis;
 
 #ifdef LCD_ENABLED
   for (int i = 0; i < (LAST_ADDRESS - 2); i++) {
@@ -291,19 +358,43 @@ void loop()
   ClientStatus = printClientStatus();
 #endif
 
+#ifdef OLED_ENABLED
+  if ((displayTimeoutCount == 0) && (digitalRead(PUSH2) == LOW)) {
+    displayTimeoutCount++;
+  }
+  switch (displayTimeoutCount) {
+    case 0:     // OLED not enabled, so do nothing
+      break;
+    case 1:     // First time, so activate display
+      oled.command(0x0C);         // Turn on display
+      buildStatusString();        // Put the data into display buffer
+      oledDisplay();              // Write to the display
+      displayTimeoutCount++;
+      break;
+    case DISPLAY_TIMEOUT:  // If we reach the max, then turn off display
+      oled.command(0x08);
+      displayTimeoutCount = 0;
+      break;
+    default:
+      displayTimeoutCount++;
+  }
+
+#endif
+
   int packetSize;
 
   // Turn on the receiver and listen for incoming data. Timeout after 1 seconds.
   // The receiverOn() method returns the number of bytes copied to rxData.
   // The radio library uses the SPI library internally, this call initializes
   // SPI/CSn and GDO0 lines. Also setup initial address, channel, and TX power.
-  SPI.begin(18);
+  SPI.begin(CC110L_CS);
   Radio.begin(ADDRESS_LOCAL, CHANNEL_1, POWER_MAX);
   packetSize = Radio.receiverOn((unsigned char*)&rxPacket, sizeof(rxPacket), 1000);
   // Simulate a Radio.end() call, but don't want to disable Chip Select pin
   // Radio.end();
   while (Radio.busy()) ; // Empty loop statement
   detachInterrupt(RF_GDO0);
+  digitalWrite(CC110L_CS, HIGH);
   pinMode(CC110L_CS, OUTPUT);    // Need to pull radio CS high to keep it off the SPI bus
 
   if (packetSize > 0) {
@@ -316,6 +407,9 @@ void loop()
     Serial.print(rxPacket.from);
     Serial.print(", bytes: ");
     Serial.println(packetSize);
+
+    lastRssi = Radio.getRssi();
+    lastLqi = Radio.getLqi();
 
     switch (rxPacket.from) {
       case (ADDRESS_WEATHER):
@@ -330,9 +424,9 @@ void loop()
     }
 
     Serial.print("RSSI: ");
-    Serial.println(Radio.getRssi());
+    Serial.println(lastRssi);
     Serial.print("LQI: ");
-    Serial.println(Radio.getLqi());
+    Serial.println(lastLqi);
     Serial.println(F("--"));
     digitalWrite(BOARD_LED, LOW);
 #ifdef LCD_ENABLED
@@ -378,6 +472,8 @@ void loop()
 
 void process_weatherdata() {
   memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
+  weatherdata.Rssi = lastRssi;
+  weatherdata.Lqi = lastLqi;
   Serial.println("Temperature (F): ");
   Serial.print("    BMP180:  ");
   Serial.print(weatherdata.BMP180_T / 10);
@@ -438,9 +534,9 @@ void process_weatherdata() {
 #endif
   Serial.println("Sending data to MQTT...");
   /* BMP180_T sensor appears to be damaged; stop sending data
-  if (! Weather_T_BMP180.publish((int32_t)weatherdata.BMP180_T)) {
+    if (! Weather_T_BMP180.publish((int32_t)weatherdata.BMP180_T)) {
     Serial.println(F("BMP180T Failed"));
-  } */
+    } */
   if (! Weather_T_SHT21.publish((int32_t)weatherdata.SHT_T)) {
     Serial.println(F("SHT21T Failed"));
   }
@@ -463,10 +559,13 @@ void process_weatherdata() {
   myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
 #endif
+  lastWeatherMillis = millis();
 }
 
 void process_G2data() {
   memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+  sensordata.Rssi = lastRssi;
+  sensordata.Lqi = lastLqi;
   Serial.println("Received packet from G2");
   Serial.print("Temperature (F): ");
   Serial.print(sensordata.MSP_T / 10);
@@ -509,6 +608,7 @@ void process_G2data() {
   myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
 #endif
+  lastG2Millis = millis();
 }
 
 #ifdef LCD_ENABLED
@@ -590,6 +690,11 @@ void MQTT_connect() {
       Serial.print("Ethernet connection loss over max: ");
       Serial.println(lostConnectionCount);
       lostConnectionCount = 0;
+#ifdef OLED_ENABLED
+      // Turn off the OLED while waiting to reconnect
+      oled.command(0x08);
+      displayTimeoutCount = 0;
+#endif
       client.stop();
       digitalWrite(W5200_RESET, LOW);
       delay(2);
@@ -684,5 +789,62 @@ int printClientStatus() {
       break;
   }
   return ClientStatus;
+}
+#endif
+
+#ifdef OLED_ENABLED
+void oledDisplay() {
+  byte r = 0;
+  byte c = 0;
+
+  oled.command(0x01); // Clear display and cursor home
+  delay(2);           // Need a pause after clearing display
+  for (r = 0; r < OLED_ROWS; r++)        // One row at a time
+  {
+    oled.command(row_address[r]);        //  moves the cursor to the first column of that line
+    for (c = 0; c < OLED_COLS; c++)      //  One character at a time
+    {
+      oled.data(oled_text[r][c]);         //  displays the correspondig string
+    }
+  }
+}
+
+void buildStatusString() {
+  int splen, rssiVal, lqiVal;
+  unsigned long timeSince;
+
+  // Make sure the printed values are bounded to fit in the display width
+  rssiVal = weatherdata.Rssi;
+  if (rssiVal < -199) rssiVal = -199;
+  if (rssiVal > 0) rssiVal = 0;
+  lqiVal = weatherdata.Lqi;
+  if (lqiVal < 0) lqiVal = 0;
+  if (lqiVal > 99) lqiVal = 99;
+  timeSince = (millis() - lastWeatherMillis) / 1000;
+  if (timeSince > 99999) timeSince = 99999;
+  // Print RSSI, LQI values; then # seconds since last message received
+  splen = snprintf((char*)oled_text[WEATHER_ROW], OLED_COLS + 1, "W:%d,%d; %d", rssiVal, lqiVal, timeSince);
+  // Pad the rest of the string with spaces.
+  for (int i = splen; i < OLED_COLS; i++) {
+    oled_text[WEATHER_ROW][i] = ' ';
+  }
+  oled_text[WEATHER_ROW][OLED_COLS] = '\0';
+
+  // Make sure the printed values are bounded to fit in the display width
+  rssiVal = sensordata.Rssi;
+  if (rssiVal < -199) rssiVal = -199;
+  if (rssiVal > 0) rssiVal = 0;
+  lqiVal = sensordata.Lqi;
+  if (lqiVal < 0) lqiVal = 0;
+  if (lqiVal > 99) lqiVal = 99;
+  timeSince = (millis() - lastG2Millis) / 1000;
+  if (timeSince > 99999) timeSince = 99999;
+  // Print RSSI, LQI values; then # seconds since last message received
+  splen = snprintf((char*)oled_text[G2_ROW], OLED_COLS + 1, "S:%d,%d; %d", rssiVal, lqiVal, timeSince);
+  // Pad the rest of the string with spaces.
+  for (int i = splen; i < OLED_COLS; i++) {
+    oled_text[G2_ROW][i] = ' ';
+  }
+  oled_text[G2_ROW][OLED_COLS] = '\0';
 }
 #endif
