@@ -20,10 +20,10 @@ to work with Energia and MSP430 controllers.
 * Modify the following files in the new Ethernet/src/utility folder
     * w5100.h  
         * Change the the following lines from:  
-             `//#define W5200_ETHERNET_SHIELD`
+             `//#define W5200_ETHERNET_SHIELD`  
              `#define W5500_ETHERNET_SHIELD`         
         * To:  
-              `#define W5200_ETHERNET_SHIELD`
+              `#define W5200_ETHERNET_SHIELD`  
               `//#define W5500_ETHERNET_SHIELD`
         * That is, uncomment the W5200 definition, and comment out W5500
     * w5200.h
@@ -40,8 +40,8 @@ to work with Energia and MSP430 controllers.
                   `#define ARDUINO_ARCH_AVR`  
           * After the following lines:  
                 `#if defined(ARDUINO_ARCH_AVR)`  
-                `SPI.begin();`  
-                `initSS();`
+                    `SPI.begin();`  
+                    `initSS();`
               * Add this line  
                   `SPI.setClockDivider(SPI_CLOCK_DIV8);`
           * In the second-to-last line of the file (right before the final #endif), add the following  
