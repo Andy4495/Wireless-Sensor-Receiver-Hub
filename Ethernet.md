@@ -32,10 +32,10 @@ to work with Energia and MSP430 controllers.
               `inline static void setSS()     { digitalWrite(SS, LOW); };`  
               `inline static void resetSS()   { digitalWrite(SS, HIGH); };`  
     * w5200.cpp
-          * After the following line:  
+          * Change the  line:  
               `#define SPI_CS 10`
-              * Add these lines:  
-                  `#define CS 10`  
+          * To: 
+                  `#define SPI_CS 8`  
                   `#define ARDUINO_ARCH_AVR`  
           * After the following lines:  
                 `#if defined(ARDUINO_ARCH_AVR)`  
@@ -48,7 +48,7 @@ to work with Energia and MSP430 controllers.
 
 ### Notes on the library ###
 
-* While the file w5200.cpp defines a symbol "SPI_CS", the actual symbol used in the code as the SPI chip select for the W5200 chip is actually just called "SS" (see w5200.h).
-* A better approach would be to require that a symbol called "W5200_CS" be defined in the application code (e.g. the constructor), not hardcoded in the library
+* While the file w5200.cpp defines a symbol "SPI_CS", other parts of the code use the internally-defined "SS" symbol as the SPI chip select.
+* A better approach would be to use a single symbol and require that its value be defined in the application code (e.g. the constructor), not hardcoded in the library
     * This would allow the application to decide on the chip select pin, not hardcoded in the library
 * The library currently hard codes the spi clock divider as DIV8. It may be possible to speed this up with additional testing.
