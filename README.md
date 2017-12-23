@@ -10,6 +10,8 @@ The code is not very generic and is currently written to support two sensors wit
 
 The built-in LCD display on the LaunchPad is used to display current temperature and battery levels from the sensors, plus connection status with the MQTT server. The full sensor data is sent to the MQTT server and is also output through the Serial USB backchannel at 9600 baud.
 
+An additional external OLED display is also supported, and can be used to print additional status information. This additional display is optional and not necessary for basic receiver hub operation.
+
 Additional sensors and changes to the data structures of the existing sensors would require changes to this sketch. Feel free to use this as a starting point, but do not expect it to work as-is for your application.
 
 See the Hardware folder for specific hardware details.
@@ -25,5 +27,8 @@ In order to compile the code, two header files are needed:
 The details on the contents of these files are in the .ino file comments.
 
 ## External Libraries ##
-* Adafruit_MQTT
-* Ethernet (from WizNet)
+* [Adafruit_MQTT] (https://github.com/adafruit/Adafruit_MQTT_Library)
+* WIZnet Ethernet library, [modified to work with Energia] (./Ethernet.md)
+* [NewhavenOLED](https://gitlab.com/Andy4495/NewhavenOLED)
+      - The NewhavenOLED library is only needed if you plan to use an external OLED
+  display as mentioned above.
