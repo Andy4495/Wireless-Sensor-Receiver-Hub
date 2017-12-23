@@ -18,13 +18,14 @@ to work with Energia and MSP430 controllers.
 * Copy the "additional files" into the "src" folder of the Ethernet library you copied above
     * Note: "IPAddress.h" and "IPAddress.cpp" may not be needed and may cause a conflict when compiling. If you get an error related to "IPAddress" when compiling, then delete these two files.
 * Modify the following files in the new Ethernet/src/utility folder
-    * w5100.h - Change the the following lines from:  
-         `//#define W5200_ETHERNET_SHIELD`
-         `#define W5500_ETHERNET_SHIELD`         
-    * To:  
-          `#define W5200_ETHERNET_SHIELD`
-          `//#define W5500_ETHERNET_SHIELD`
-    * That is, uncomment the W5200 definition, and comment out W5500
+    * w5100.h  
+        * Change the the following lines from:  
+             `//#define W5200_ETHERNET_SHIELD`
+             `#define W5500_ETHERNET_SHIELD`         
+        * To:  
+              `#define W5200_ETHERNET_SHIELD`
+              `//#define W5500_ETHERNET_SHIELD`
+        * That is, uncomment the W5200 definition, and comment out W5500
     * w5200.h
           * In lines 315-339, delete or comment out all the #ifdef structures and leave only the following as active code:  
               `inline static void initSS()    { pinMode(SS, OUTPUT); \`  
@@ -34,7 +35,7 @@ to work with Energia and MSP430 controllers.
     * w5200.cpp
           * Change the  line:  
               `#define SPI_CS 10`
-          * To: 
+          * To:  
                   `#define SPI_CS 8`  
                   `#define ARDUINO_ARCH_AVR`  
           * After the following lines:  
