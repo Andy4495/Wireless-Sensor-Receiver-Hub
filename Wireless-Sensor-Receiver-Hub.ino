@@ -207,17 +207,16 @@ struct sPacket  // CC110L packet structure
 struct sPacket rxPacket;
 
 struct WeatherData {
-  int             BMP180_T;  // Tenth degrees F
-  unsigned int    BMP180_P;  // Pressure in inches of Hg * 100
-  int             TMP106_Ti; // Tenth degrees F
+  int             BME280_T;  // Tenth degrees F
+  unsigned int    BME280_P;  // Pressure in inches of Hg * 100
+  int             BME280_H;  // % Relative Humidity
+  int             TMP107_Ti; // Tenth degrees F
+  int             TMP107_Te; // Tenth degrees F
   unsigned int    LUX;       // Limited in code to 65535
-  int             SHT_T;     // Tenth degrees F
-  int             SHT_H;     // Tenth % Relative Humidity * 10
   int             MSP_T;     // Tenth degrees F
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
   unsigned long   Millis;
-  unsigned int    Resets;
   // Rssi and Lqi are not part of the payload and therefore need to
   // be at the end of the struct.
   int             Rssi;
@@ -475,31 +474,31 @@ void process_weatherdata() {
   weatherdata.Rssi = lastRssi;
   weatherdata.Lqi = lastLqi;
   Serial.println("Temperature (F): ");
-  Serial.print("    BMP180:  ");
-  Serial.print(weatherdata.BMP180_T / 10);
+  Serial.print("    BME280:  ");
+  Serial.print(weatherdata.BME280_T / 10);
   Serial.print(".");
-  Serial.println(weatherdata.BMP180_T % 10);
-  Serial.print("    TMP106:  ");
-  Serial.print(weatherdata.TMP106_Ti / 10);
+  Serial.println(weatherdata.BME280_T % 10);
+  Serial.print("    TMP106 (Die):  ");
+  Serial.print(weatherdata.TMP107_Ti / 10);
   Serial.print(".");
-  Serial.println(weatherdata.TMP106_Ti % 10);
-  Serial.print("    SHT21:   ");
-  Serial.print(weatherdata.SHT_T / 10);
+  Serial.println(weatherdata.TMP107_Ti % 10);
+  Serial.print("    TMP106 (Ext):  ");
+  Serial.print(weatherdata.TMP107_Te / 10);
   Serial.print(".");
-  Serial.println(weatherdata.SHT_T % 10);
+  Serial.println(weatherdata.TMP107_Te % 10);
   Serial.print("    MSP Die: ");
   Serial.print(weatherdata.MSP_T / 10);
   Serial.print(".");
   Serial.println(weatherdata.MSP_T % 10);
   Serial.print("Pressure (inHg): ");
-  Serial.print(weatherdata.BMP180_P / 100);
+  Serial.print(weatherdata.BME280_P / 100);
   Serial.print(".");
-  Serial.print((weatherdata.BMP180_P / 10) % 10);
-  Serial.println(weatherdata.BMP180_P % 10);
+  Serial.print((weatherdata.BME280_P / 10) % 10);
+  Serial.println(weatherdata.BME280_P % 10);
   Serial.print("%RH: ");
-  Serial.print(weatherdata.SHT_H / 10);
+  Serial.print(weatherdata.BME280_H / 10);
   Serial.print(".");
-  Serial.println(weatherdata.SHT_H % 10);
+  Serial.println(weatherdata.BME280_H % 10);
   Serial.print("Lux: ");
   Serial.println(weatherdata.LUX);
   Serial.print("Battery V: ");
@@ -516,15 +515,13 @@ void process_weatherdata() {
   Serial.println(weatherdata.Loops);
   Serial.print("Millis: ");
   Serial.println(weatherdata.Millis);
-  Serial.print("Resets: ");
-  Serial.println(weatherdata.Resets);
 
 #ifdef LCD_ENABLED
-  displayTempOnLCD(weatherdata.SHT_T);
+  displayTempOnLCD(weatherdata.BME280_T);
   myLCD.showSymbol(LCD_SEG_CLOCK, 1);
   displayBattOnLCD(weatherdata.Batt_mV);
   currentDisplay = ADDRESS_WEATHER;
-  temperatures[ADDRESS_WEATHER - 2] = weatherdata.SHT_T;
+  temperatures[ADDRESS_WEATHER - 2] = weatherdata.BME280_T;
   batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
 #endif
 
@@ -533,17 +530,13 @@ void process_weatherdata() {
   myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
   Serial.println("Sending data to MQTT...");
-  /* BMP180_T sensor appears to be damaged; stop sending data
-    if (! Weather_T_BMP180.publish((int32_t)weatherdata.BMP180_T)) {
-    Serial.println(F("BMP180T Failed"));
-    } */
-  if (! Weather_T_SHT21.publish((int32_t)weatherdata.SHT_T)) {
-    Serial.println(F("SHT21T Failed"));
+  if (! Weather_T_SHT21.publish((int32_t)weatherdata.BME280_T)) {
+    Serial.println(F("BME280_T Failed"));
   }
-  if (! Weather_P.publish((uint32_t)weatherdata.BMP180_P)) {
-    Serial.println(F("BMP180P Failed"));
+  if (! Weather_P.publish((uint32_t)weatherdata.BME280_P)) {
+    Serial.println(F("BME280_P Failed"));
   }
-  if (! Weather_RH.publish((uint32_t)weatherdata.SHT_H)) {
+  if (! Weather_RH.publish((uint32_t)weatherdata.BME280_H)) {
     Serial.println(F("RH Failed"));
   }
   if (! Weather_LUX.publish((uint32_t)weatherdata.LUX)) {
