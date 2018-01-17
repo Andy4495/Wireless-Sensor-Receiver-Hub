@@ -21,6 +21,9 @@
                            - Press PUSH2 to temporarily turn on OLED
                            - OLED displays RSSI, LQI, and seconds since
                              last message for each sensor.
+   2.4 - 01/15/17 - A.T. - Add CRC check on received packet.
+                           Write "0" battery level to MQTT if CRC failed.
+   2.5 - 01/16/17 - A.T. - Change lux unit to long int. 
 */
 
 /**
@@ -212,7 +215,7 @@ struct WeatherData {
   int             BME280_H;  // % Relative Humidity
   int             TMP107_Ti; // Tenth degrees F
   int             TMP107_Te; // Tenth degrees F
-  unsigned int    LUX;       // Limited in code to 65535
+  unsigned long   LUX;       // Lux units
   int             MSP_T;     // Tenth degrees F
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
@@ -239,6 +242,7 @@ G2Sensor sensordata;
 int lostConnectionCount = 0;
 int lastRssi, lastLqi;
 unsigned long lastG2Millis, lastWeatherMillis;
+int crcFailed = 0; // 1 is bad CRC, 0 is good CRC
 
 #ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
@@ -406,6 +410,10 @@ void loop()
     Serial.print(rxPacket.from);
     Serial.print(", bytes: ");
     Serial.println(packetSize);
+    if (Radio.getCrcBit() == 0) {
+      crcFailed = 1;
+      Serial.println("*** CRC check failed! ***");
+    } else crcFailed = 0;
 
     lastRssi = Radio.getRssi();
     lastLqi = Radio.getLqi();
@@ -470,138 +478,158 @@ void loop()
 }
 
 void process_weatherdata() {
-  memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
-  weatherdata.Rssi = lastRssi;
-  weatherdata.Lqi = lastLqi;
-  Serial.println("Temperature (F): ");
-  Serial.print("    BME280:  ");
-  Serial.print(weatherdata.BME280_T / 10);
-  Serial.print(".");
-  Serial.println(weatherdata.BME280_T % 10);
-  Serial.print("    TMP106 (Die):  ");
-  Serial.print(weatherdata.TMP107_Ti / 10);
-  Serial.print(".");
-  Serial.println(weatherdata.TMP107_Ti % 10);
-  Serial.print("    TMP106 (Ext):  ");
-  Serial.print(weatherdata.TMP107_Te / 10);
-  Serial.print(".");
-  Serial.println(weatherdata.TMP107_Te % 10);
-  Serial.print("    MSP Die: ");
-  Serial.print(weatherdata.MSP_T / 10);
-  Serial.print(".");
-  Serial.println(weatherdata.MSP_T % 10);
-  Serial.print("Pressure (inHg): ");
-  Serial.print(weatherdata.BME280_P / 100);
-  Serial.print(".");
-  Serial.print((weatherdata.BME280_P / 10) % 10);
-  Serial.println(weatherdata.BME280_P % 10);
-  Serial.print("%RH: ");
-  Serial.print(weatherdata.BME280_H / 10);
-  Serial.print(".");
-  Serial.println(weatherdata.BME280_H % 10);
-  Serial.print("Lux: ");
-  Serial.println(weatherdata.LUX);
-  Serial.print("Battery V: ");
-  Serial.print(weatherdata.Batt_mV / 1000);
-  Serial.print(".");
-  Serial.print((weatherdata.Batt_mV / 100) % 10);
-  Serial.print((weatherdata.Batt_mV / 10) % 10);
-  Serial.print(weatherdata.Batt_mV % 10);
-  if (weatherdata.Batt_mV < 2200) {
-    Serial.print("   *** Out of Spec ***");
+  if (crcFailed) {
+#ifdef ETHERNET_ENABLED
+    // If CRC was bad, then send 0 battery voltage to MQTT
+    if (! Weather_Batt.publish((uint32_t)0)) {
+      Serial.println(F("Failed to send zero Batt level for bad CRC. "));
+    }
+#endif
   }
-  Serial.println(" ");
-  Serial.print("Loops: ");
-  Serial.println(weatherdata.Loops);
-  Serial.print("Millis: ");
-  Serial.println(weatherdata.Millis);
+  else {
+    memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
+    weatherdata.Rssi = lastRssi;
+    weatherdata.Lqi = lastLqi;
+    Serial.println("Temperature (F): ");
+    Serial.print("    BME280:  ");
+    Serial.print(weatherdata.BME280_T / 10);
+    Serial.print(".");
+    Serial.println(weatherdata.BME280_T % 10);
+    Serial.print("    TMP106 (Die):  ");
+    Serial.print(weatherdata.TMP107_Ti / 10);
+    Serial.print(".");
+    Serial.println(weatherdata.TMP107_Ti % 10);
+    Serial.print("    TMP106 (Ext):  ");
+    Serial.print(weatherdata.TMP107_Te / 10);
+    Serial.print(".");
+    Serial.println(weatherdata.TMP107_Te % 10);
+    Serial.print("    MSP Die: ");
+    Serial.print(weatherdata.MSP_T / 10);
+    Serial.print(".");
+    Serial.println(weatherdata.MSP_T % 10);
+    Serial.print("Pressure (inHg): ");
+    Serial.print(weatherdata.BME280_P / 100);
+    Serial.print(".");
+    Serial.print((weatherdata.BME280_P / 10) % 10);
+    Serial.println(weatherdata.BME280_P % 10);
+    Serial.print("%RH: ");
+    Serial.print(weatherdata.BME280_H / 10);
+    Serial.print(".");
+    Serial.println(weatherdata.BME280_H % 10);
+    Serial.print("Lux: ");
+    Serial.println(weatherdata.LUX);
+    Serial.print("Battery V: ");
+    Serial.print(weatherdata.Batt_mV / 1000);
+    Serial.print(".");
+    Serial.print((weatherdata.Batt_mV / 100) % 10);
+    Serial.print((weatherdata.Batt_mV / 10) % 10);
+    Serial.print(weatherdata.Batt_mV % 10);
+    if (weatherdata.Batt_mV < 2200) {
+      Serial.print("   *** Out of Spec ***");
+    }
+    Serial.println(" ");
+    Serial.print("Loops: ");
+    Serial.println(weatherdata.Loops);
+    Serial.print("Millis: ");
+    Serial.println(weatherdata.Millis);
 
 #ifdef LCD_ENABLED
-  displayTempOnLCD(weatherdata.BME280_T);
-  myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-  displayBattOnLCD(weatherdata.Batt_mV);
-  currentDisplay = ADDRESS_WEATHER;
-  temperatures[ADDRESS_WEATHER - 2] = weatherdata.BME280_T;
-  batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
+    displayTempOnLCD(weatherdata.BME280_T);
+    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+    displayBattOnLCD(weatherdata.Batt_mV);
+    currentDisplay = ADDRESS_WEATHER;
+    temperatures[ADDRESS_WEATHER - 2] = weatherdata.BME280_T;
+    batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
 #endif
 
 #ifdef ETHERNET_ENABLED
 #ifdef LCD_ENABLED
-  myLCD.showSymbol(LCD_SEG_TX, 1);
+    myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
-  Serial.println("Sending data to MQTT...");
-  if (! Weather_T_SHT21.publish((int32_t)weatherdata.BME280_T)) {
-    Serial.println(F("BME280_T Failed"));
-  }
-  if (! Weather_P.publish((uint32_t)weatherdata.BME280_P)) {
-    Serial.println(F("BME280_P Failed"));
-  }
-  if (! Weather_RH.publish((uint32_t)weatherdata.BME280_H)) {
-    Serial.println(F("RH Failed"));
-  }
-  if (! Weather_LUX.publish((uint32_t)weatherdata.LUX)) {
-    Serial.println(F("LUX Failed"));
-  }
-  if (! Weather_Batt.publish((uint32_t)weatherdata.Batt_mV)) {
-    Serial.println(F("Batt Failed"));
-  }
-  if (! Weather_Loops.publish((uint32_t)weatherdata.Loops)) {
-    Serial.println(F("Loops Failed"));
-  }
+    Serial.println("Sending data to MQTT...");
+    if (! Weather_T_SHT21.publish((int32_t)weatherdata.BME280_T)) {
+      Serial.println(F("BME280_T Failed"));
+    }
+    if (! Weather_P.publish((uint32_t)weatherdata.BME280_P)) {
+      Serial.println(F("BME280_P Failed"));
+    }
+    if (! Weather_RH.publish((uint32_t)weatherdata.BME280_H)) {
+      Serial.println(F("RH Failed"));
+    }
+    if (! Weather_LUX.publish((uint32_t)weatherdata.LUX)) {
+      Serial.println(F("LUX Failed"));
+    }
+    if (! Weather_Batt.publish((uint32_t)weatherdata.Batt_mV)) {
+      Serial.println(F("Batt Failed"));
+    }
+    if (! Weather_Loops.publish((uint32_t)weatherdata.Loops)) {
+      Serial.println(F("Loops Failed"));
+    }
 #ifdef LCD_ENABLED
-  myLCD.showSymbol(LCD_SEG_TX, 0);
+    myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
 #endif
-  lastWeatherMillis = millis();
+    lastWeatherMillis = millis();
+  }
 }
 
 void process_G2data() {
-  memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-  sensordata.Rssi = lastRssi;
-  sensordata.Lqi = lastLqi;
-  Serial.println("Received packet from G2");
-  Serial.print("Temperature (F): ");
-  Serial.print(sensordata.MSP_T / 10);
-  Serial.print(".");
-  Serial.println(sensordata.MSP_T % 10);
-  Serial.print("Battery V: ");
-  Serial.print(sensordata.Batt_mV / 1000);
-  Serial.print(".");
-  Serial.print((sensordata.Batt_mV / 100) % 10);
-  Serial.print((sensordata.Batt_mV / 10) % 10);
-  Serial.print(sensordata.Batt_mV % 10);
-  if (sensordata.Batt_mV < 2200) {
-    Serial.print("   *** Out of Spec ***");
+  if (crcFailed) {
+#ifdef ETHERNET_ENABLED
+    // If CRC was bad, then send 0 battery voltage to MQTT
+    if (! Slim_Batt.publish((uint32_t)0)) {
+      Serial.println(F("Failed to send zero Batt level for bad CRC. "));
+    }
+#endif
   }
-  Serial.println(" ");
-  Serial.print("Loops: ");
-  Serial.println(sensordata.Loops);
-  Serial.print("Millis: ");
-  Serial.println(sensordata.Millis);
+  else {
+    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+    sensordata.Rssi = lastRssi;
+    sensordata.Lqi = lastLqi;
+    Serial.println("Received packet from G2");
+    Serial.print("Temperature (F): ");
+    Serial.print(sensordata.MSP_T / 10);
+    Serial.print(".");
+    Serial.println(sensordata.MSP_T % 10);
+    Serial.print("Battery V: ");
+    Serial.print(sensordata.Batt_mV / 1000);
+    Serial.print(".");
+    Serial.print((sensordata.Batt_mV / 100) % 10);
+    Serial.print((sensordata.Batt_mV / 10) % 10);
+    Serial.print(sensordata.Batt_mV % 10);
+    if (sensordata.Batt_mV < 2200) {
+      Serial.print("   *** Out of Spec ***");
+    }
+    Serial.println(" ");
+    Serial.print("Loops: ");
+    Serial.println(sensordata.Loops);
+    Serial.print("Millis: ");
+    Serial.println(sensordata.Millis);
 #ifdef LCD_ENABLED
-  displayTempOnLCD(sensordata.MSP_T);
-  myLCD.showSymbol(LCD_SEG_HEART, 1);
-  displayBattOnLCD(sensordata.Batt_mV);
-  currentDisplay = ADDRESS_G2;
-  temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
-  batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
+    displayTempOnLCD(sensordata.MSP_T);
+    myLCD.showSymbol(LCD_SEG_HEART, 1);
+    displayBattOnLCD(sensordata.Batt_mV);
+    currentDisplay = ADDRESS_G2;
+    temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
+    batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
 #endif
 #ifdef ETHERNET_ENABLED
 #ifdef LCD_ENABLED
-  myLCD.showSymbol(LCD_SEG_TX, 1);
+    myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
-  Serial.println("Sending data to MQTT...");
-  if (! Slim_T.publish((int32_t)sensordata.MSP_T)) {
-    Serial.println(F("MSP_T Failed"));
-  }
-  if (! Slim_Batt.publish((uint32_t)sensordata.Batt_mV)) {
-    Serial.println(F("Batt Failed"));
-  }
+    Serial.println("Sending data to MQTT...");
+    if (! Slim_T.publish((int32_t)sensordata.MSP_T)) {
+      Serial.println(F("MSP_T Failed"));
+    }
+    if (! Slim_Batt.publish((uint32_t)sensordata.Batt_mV)) {
+      Serial.println(F("Batt Failed"));
+    }
 #ifdef LCD_ENABLED
-  myLCD.showSymbol(LCD_SEG_TX, 0);
+    myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
 #endif
-  lastG2Millis = millis();
+    lastG2Millis = millis();
+  }
 }
 
 #ifdef LCD_ENABLED
