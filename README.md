@@ -7,6 +7,7 @@ This sketch is designed to run on an MSP-EXPFR6989 LaunchPad, CC110L BoosterPack
 The code is not very generic and is currently written to support two sensors with specific data structures:
 - An outdoor weather sensing station based on the SENSORS BoosterPack
 - A temperature sensor based on an MSP430G2553
+- Two additional sensors based on MS430 internal temperature sensors, with the same data format as the G2553 sensor
 
 The built-in LCD display on the LaunchPad is used to display current temperature and battery levels from the sensors, plus connection status with the MQTT server. The full sensor data is sent to the MQTT server and is also output through the Serial USB backchannel at 9600 baud.
 

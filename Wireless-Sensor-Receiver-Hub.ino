@@ -21,9 +21,10 @@
                            - Press PUSH2 to temporarily turn on OLED
                            - OLED displays RSSI, LQI, and seconds since
                              last message for each sensor.
-   2.4 - 01/15/17 - A.T. - Add CRC check on received packet.
+   2.4 - 01/15/18 - A.T. - Add CRC check on received packet.
                            Write "0" battery level to MQTT if CRC failed.
-   2.5 - 01/16/17 - A.T. - Change lux unit to long int. 
+   2.5 - 01/16/18 - A.T. - Change lux unit to long int.
+   2.6 - 01/21/18 - A.T. - Additional temp sensor modules.
 */
 
 /**
@@ -41,6 +42,7 @@
    Currently defined transmitters
    - Outdoor weather station using SENSORHUB BoosterPack
    - Simple temp monitor using MSP430G2553 internal sensor
+   - Additional MSP430 temp sensors using same data structure
    - Other transmitters may be defined in the future
 
    The receiving station code needs to be modified whenever
@@ -192,7 +194,9 @@ Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO
 #define ADDRESS_LOCAL    0x01
 #define ADDRESS_WEATHER  0x02
 #define ADDRESS_G2       0x03
-#define LAST_ADDRESS     0x03
+#define ADDRESS_SENSOR4  0x04
+#define ADDRESS_SENSOR5  0x05
+#define LAST_ADDRESS     0x05
 
 #define RF_GDO0       19
 
@@ -226,7 +230,7 @@ struct WeatherData {
   int             Lqi;
 };
 
-struct G2Sensor {
+struct TempSensor {
   int             MSP_T;     // Tenth degrees F
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
@@ -238,7 +242,7 @@ struct G2Sensor {
 };
 
 WeatherData weatherdata;
-G2Sensor sensordata;
+TempSensor sensordata;
 int lostConnectionCount = 0;
 int lastRssi, lastLqi;
 unsigned long lastG2Millis, lastWeatherMillis;
@@ -425,6 +429,10 @@ void loop()
       case (ADDRESS_G2):
         process_G2data();
         break;
+      case (ADDRESS_SENSOR4):
+      case (ADDRESS_SENSOR5):
+        process_sensordata();
+        break;
       default:
         Serial.println("Message received from unknown sensor.");
         break;
@@ -452,11 +460,19 @@ void loop()
     displayTempOnLCD(temperatures[currentDisplay - 2]);
     displayBattOnLCD(batteries[currentDisplay - 2]);
     switch (currentDisplay) {
-      case ADDRESS_WEATHER:
+      case ADDRESS_WEATHER:       // 0x02
         myLCD.showSymbol(LCD_SEG_CLOCK, 1);
         break;
-      case ADDRESS_G2:
+      case ADDRESS_G2:            // 0x03
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        myLCD.showSymbol(LCD_SEG_R, 1);
+        break;
+      case ADDRESS_SENSOR4:       // 0x04
         myLCD.showSymbol(LCD_SEG_HEART, 1);
+        break;
+      case ADDRESS_SENSOR5:       // 0x05
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        myLCD.showSymbol(LCD_SEG_R, 1);
         break;
       default:
         break;
@@ -562,9 +578,9 @@ void process_weatherdata() {
     if (! Weather_Batt.publish((uint32_t)weatherdata.Batt_mV)) {
       Serial.println(F("Batt Failed"));
     }
-    if (! Weather_Loops.publish((uint32_t)weatherdata.Loops)) {
-      Serial.println(F("Loops Failed"));
-    }
+//    if (! Weather_Loops.publish((uint32_t)weatherdata.Loops)) {
+//     Serial.println(F("Loops Failed"));
+//    }
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
@@ -607,7 +623,8 @@ void process_G2data() {
     Serial.println(sensordata.Millis);
 #ifdef LCD_ENABLED
     displayTempOnLCD(sensordata.MSP_T);
-    myLCD.showSymbol(LCD_SEG_HEART, 1);
+    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+    myLCD.showSymbol(LCD_SEG_R, 1);
     displayBattOnLCD(sensordata.Batt_mV);
     currentDisplay = ADDRESS_G2;
     temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
@@ -629,6 +646,85 @@ void process_G2data() {
 #endif
 #endif
     lastG2Millis = millis();
+  }
+}
+
+void process_sensordata() {
+  if (crcFailed) {
+    Serial.println(F("Bad CRC from Temp Sensor. "));
+  }
+  else {
+    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+    sensordata.Rssi = lastRssi;
+    sensordata.Lqi = lastLqi;
+    Serial.print("Received packet from temp sensor: ");
+    Serial.println(rxPacket.from);
+    Serial.print("Temperature (F): ");
+    Serial.print(sensordata.MSP_T / 10);
+    Serial.print(".");
+    Serial.println(sensordata.MSP_T % 10);
+    Serial.print("Battery V: ");
+    Serial.print(sensordata.Batt_mV / 1000);
+    Serial.print(".");
+    Serial.print((sensordata.Batt_mV / 100) % 10);
+    Serial.print((sensordata.Batt_mV / 10) % 10);
+    Serial.print(sensordata.Batt_mV % 10);
+    if (sensordata.Batt_mV < 2200) {
+      Serial.print("   *** Out of Spec ***");
+    }
+    Serial.println(" ");
+    Serial.print("Loops: ");
+    Serial.println(sensordata.Loops);
+    Serial.print("Millis: ");
+    Serial.println(sensordata.Millis);
+#ifdef LCD_ENABLED
+    displayTempOnLCD(sensordata.MSP_T);
+    switch (rxPacket.from) {
+      case ADDRESS_SENSOR4:
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        currentDisplay = ADDRESS_SENSOR4;
+        temperatures[ADDRESS_SENSOR4 - 2] = sensordata.MSP_T;
+        batteries[ADDRESS_SENSOR4 - 2]    = sensordata.Batt_mV;
+        break;
+      case ADDRESS_SENSOR5:
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        myLCD.showSymbol(LCD_SEG_R, 1);
+        currentDisplay = ADDRESS_SENSOR4;
+        temperatures[ADDRESS_SENSOR5 - 2] = sensordata.MSP_T;
+        batteries[ADDRESS_SENSOR5 - 2]    = sensordata.Batt_mV;
+        break;
+      default:
+        break;
+    }
+    displayBattOnLCD(sensordata.Batt_mV);
+#endif
+#ifdef ETHERNET_ENABLED
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_TX, 1);
+#endif
+    switch (rxPacket.from) {
+      case ADDRESS_SENSOR4:
+        Serial.println("Sending data to MQTT...");
+        if (! Sensor4_Temp.publish((int32_t)sensordata.MSP_T)) {
+          Serial.println(F("MSP_T Failed"));
+        }
+        if (! Sensor4_Batt.publish((uint32_t)sensordata.Batt_mV)) {
+          Serial.println(F("Batt Failed"));
+        }
+        break;
+      case ADDRESS_SENSOR5:
+        Serial.println("Sending data to MQTT...");
+        if (! Sensor5_Temp.publish((int32_t)sensordata.MSP_T)) {
+          Serial.println(F("MSP_T Failed"));
+        }
+        break;
+      default:
+        break;
+    }
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_TX, 0);
+#endif
+#endif
   }
 }
 
