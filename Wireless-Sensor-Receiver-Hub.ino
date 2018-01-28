@@ -26,6 +26,8 @@
    2.5 - 01/16/18 - A.T. - Change lux unit to long int.
    2.6 - 01/21/18 - A.T. - Additional temp sensor modules.
    2.7 - 01/25/18 - A.T. - Add support for ThingSpeak IoT
+                         - Put constant strings in F() macro for better
+                           compatiblity for running on Arduino
 */
 
 /**
@@ -193,14 +195,14 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
      #define AIO_SERVERPORT  Port number of your MQTT server, e.g. 1883
      #define AIO_USERNAME    "Username for MQTT server account"
      #define AIO_KEY         "MQTT key required for your MQTT server account"
-   If using ThingSpeak, then WRITE keys for each channel may also be #defined here. 
+   If using ThingSpeak, then WRITE keys for each channel may also be #defined here.
 */
 EthernetClient client_aio;
 EthernetClient client_ts;
 Adafruit_MQTT_Client aio(&client_aio, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
 char payload[128];    // ThingSpeak payload string
-char fieldBuffer[32];  // Temporary buffer to construct payload string 
+char fieldBuffer[32];  // Temporary buffer to construct payload string
 #endif
 
 // -----------------------------------------------------------------------------
@@ -279,8 +281,8 @@ int  TxStatus = 0;
    Each feed/channel that you wish to publish needs to be defined.
      - Adafruit IO feeds follow the form: <username>/feeds/<feedname>, for example:
          Adafruit_MQTT_Publish pressure = Adafruit_MQTT_Publish(&mqtt,  AIO_USERNAME "/feeds/pressure");
-     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example: 
-         Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt, 
+     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example:
+         Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
                                         "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
          See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
    The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
@@ -310,20 +312,20 @@ void setup()
 
   // Setup serial for status printing.
   Serial.begin(9600);
-  Serial.println(" ");
-  Serial.println("Sensor receiver hub with CC110L.");
+  Serial.println(F(" "));
+  Serial.println(F("Sensor receiver hub with CC110L."));
   delay(500);
 
 #ifdef LCD_ENABLED
   myLCD.init();
 #ifdef ETHERNET_ENABLED
-  myLCD.displayText("ETHER ");
+  myLCD.displayText(F("ETHER "));
   // Display the "!" LCD symbol to show we are initializing
   MarkStatus = 1;
   myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
   //  delay(500);
 #endif
-  Serial.println("Started LCD display");
+  Serial.println(F("Started LCD display"));
 #endif
 
 #ifdef OLED_ENABLED
@@ -334,10 +336,10 @@ void setup()
 #endif
 
 #ifdef ETHERNET_ENABLED
-  Serial.println("Starting Ethernet...");
+  Serial.println(F("Starting Ethernet..."));
   Ethernet.begin(mac);
   //  delay(1000);            // Give it a second to initialize
-  Serial.println("Ethernet enabled.");
+  Serial.println(F("Ethernet enabled."));
   MQTT_connect(&aio, &client_aio);
   MQTT_connect(&thingspeak, &client_ts);
 #endif
@@ -362,10 +364,10 @@ void setup()
     temperatures[i] = 0;
     batteries[i] = 0;
   }
-  myLCD.displayText("RX ON ");
+  myLCD.displayText(F("RX ON "));
   RadioStatus = 1;
   myLCD.showSymbol(LCD_SEG_RADIO, RadioStatus);
-  Serial.println("Waiting for first Rx message. ");
+  Serial.println(F("Waiting for first Rx message. "));
 #endif
 }
 
@@ -379,7 +381,7 @@ void loop()
   int EthStatus, ClientStatus;
 #ifdef PRINT_ALL_CLIENT_STATUS
   EthStatus = Ethernet.maintain();
-  Serial.print("Ethernet Maintain status: ");
+  Serial.print(F("Ethernet Maintain status: "));
   Serial.println(EthStatus);
 #endif
   ClientStatus = printClientStatus(&client_aio);
@@ -430,14 +432,14 @@ void loop()
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_RX, 1);
 #endif
-    Serial.println("--");
-    Serial.print("Received packet from device: ");
+    Serial.println(F("--"));
+    Serial.print(F("Received packet from device: "));
     Serial.print(rxPacket.from);
-    Serial.print(", bytes: ");
+    Serial.print(F(", bytes: "));
     Serial.println(packetSize);
     if (Radio.getCrcBit() == 0) {
       crcFailed = 1;
-      Serial.println("*** CRC check failed! ***");
+      Serial.println(F("*** CRC check failed! ***"));
     } else crcFailed = 0;
 
     lastRssi = Radio.getRssi();
@@ -455,13 +457,13 @@ void loop()
         process_sensordata();
         break;
       default:
-        Serial.println("Message received from unknown sensor.");
+        Serial.println(F("Message received from unknown sensor."));
         break;
     }
 
-    Serial.print("RSSI: ");
+    Serial.print(F("RSSI: "));
     Serial.println(lastRssi);
-    Serial.print("LQI: ");
+    Serial.print(F("LQI: "));
     Serial.println(lastLqi);
     Serial.println(F("--"));
     digitalWrite(BOARD_LED, LOW);
@@ -470,7 +472,7 @@ void loop()
 #endif
   }
   else {
-    Serial.println("Nothing received.");
+    Serial.println(F("Nothing received."));
   }
 
 #ifdef LCD_ENABLED
@@ -498,6 +500,13 @@ void loop()
       default:
         break;
     }
+#ifdef ETHERNET_ENABLED
+    payload[0] = '\0';
+    BuildPayload(payload, fieldBuffer, 12, "PUSH1 Pressed.");
+    if (! Sensor_Errors.publish(payload)) {
+      Serial.println(F("Failed to send PUSH1 to ThingSpeak"));
+    }
+#endif
   }
 #endif
 
@@ -505,7 +514,7 @@ void loop()
   // ping the server to keep the mqtt connection alive
   if (! aio.ping()) {
     aio.disconnect();
-    Serial.println("AIO MQTT ping failed, disconnecting.");
+    Serial.println(F("AIO MQTT ping failed, disconnecting."));
 #ifdef LCD_ENABLED
     MarkStatus = 1;
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
@@ -513,7 +522,7 @@ void loop()
   }
   if (! thingspeak.ping()) {
     thingspeak.disconnect();
-    Serial.println("ThingSpeak MQTT ping failed, disconnecting.");
+    Serial.println(F("ThingSpeak MQTT ping failed, disconnecting."));
 #ifdef LCD_ENABLED
     MarkStatus = 1;
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
@@ -525,14 +534,12 @@ void loop()
 void process_weatherdata() {
   if (crcFailed) {
 #ifdef ETHERNET_ENABLED
-    // If CRC was bad, then send 0 battery voltage to MQTT
-    if (! Weather_Batt.publish((uint32_t)0)) {
-      Serial.println(F("Failed to send zero Batt level for bad CRC to AIO. "));
-    }
+    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
+    process_failedCRC();
     payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 8, 0);
+    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
     if (! Weather_Channel.publish(payload)) {
-      Serial.println(F("Failed to send zero Batt level for bad CRC to ThingSpeak"));
+      Serial.println(F("Failed to send bad CRC to Weather_Channel ThingSpeak"));
     }
 #endif
   }
@@ -540,47 +547,47 @@ void process_weatherdata() {
     memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
     weatherdata.Rssi = lastRssi;
     weatherdata.Lqi = lastLqi;
-    Serial.println("Temperature (F): ");
-    Serial.print("    BME280:  ");
+    Serial.println(F("Temperature (F): "));
+    Serial.print(F("    BME280:  "));
     Serial.print(weatherdata.BME280_T / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(weatherdata.BME280_T % 10);
-    Serial.print("    TMP106 (Die):  ");
+    Serial.print(F("    TMP106 (Die):  "));
     Serial.print(weatherdata.TMP107_Ti / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(weatherdata.TMP107_Ti % 10);
-    Serial.print("    TMP106 (Ext):  ");
+    Serial.print(F("    TMP106 (Ext):  "));
     Serial.print(weatherdata.TMP107_Te / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(weatherdata.TMP107_Te % 10);
-    Serial.print("    MSP Die: ");
+    Serial.print(F("    MSP Die: "));
     Serial.print(weatherdata.MSP_T / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(weatherdata.MSP_T % 10);
-    Serial.print("Pressure (inHg): ");
+    Serial.print(F("Pressure (inHg): "));
     Serial.print(weatherdata.BME280_P / 100);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.print((weatherdata.BME280_P / 10) % 10);
     Serial.println(weatherdata.BME280_P % 10);
-    Serial.print("%RH: ");
+    Serial.print(F("%RH: "));
     Serial.print(weatherdata.BME280_H / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(weatherdata.BME280_H % 10);
-    Serial.print("Lux: ");
+    Serial.print(F("Lux: "));
     Serial.println(weatherdata.LUX);
-    Serial.print("Battery V: ");
+    Serial.print(F("Battery V: "));
     Serial.print(weatherdata.Batt_mV / 1000);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.print((weatherdata.Batt_mV / 100) % 10);
     Serial.print((weatherdata.Batt_mV / 10) % 10);
     Serial.print(weatherdata.Batt_mV % 10);
     if (weatherdata.Batt_mV < 2200) {
-      Serial.print("   *** Out of Spec ***");
+      Serial.print(F("   *** Out of Spec ***"));
     }
-    Serial.println(" ");
-    Serial.print("Loops: ");
+    Serial.println(F(" "));
+    Serial.print(("Loops: "));
     Serial.println(weatherdata.Loops);
-    Serial.print("Millis: ");
+    Serial.print(("Millis: "));
     Serial.println(weatherdata.Millis);
 
 #ifdef LCD_ENABLED
@@ -596,7 +603,7 @@ void process_weatherdata() {
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
-    Serial.println("Sending data to AIO...");
+    Serial.println(F("Sending data to AIO..."));
     if (! Weather_T_SHT21.publish((int32_t)weatherdata.BME280_T)) {
       Serial.println(F("BME280_T Failed"));
     }
@@ -612,10 +619,8 @@ void process_weatherdata() {
     if (! Weather_Batt.publish((uint32_t)weatherdata.Batt_mV)) {
       Serial.println(F("Batt Failed"));
     }
-    //    if (! Weather_Loops.publish((uint32_t)weatherdata.Loops)) {
-    //     Serial.println(F("Loops Failed"));
-    //    }
-    Serial.println("Sending data to ThingSpeak...");
+
+    Serial.println(F("Sending data to ThingSpeak Weather_Channel..."));
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, weatherdata.BME280_T);
     BuildPayload(payload, fieldBuffer, 2, weatherdata.TMP107_Te);
@@ -625,11 +630,25 @@ void process_weatherdata() {
     BuildPayload(payload, fieldBuffer, 6, weatherdata.BME280_P);
     BuildPayload(payload, fieldBuffer, 7, weatherdata.LUX);
     BuildPayload(payload, fieldBuffer, 8, weatherdata.Batt_mV);
-    Serial.print("Payload: ");
+    Serial.print(F("Payload: "));
     Serial.println(payload);
     if (! Weather_Channel.publish(payload)) {
       Serial.println(F("Weather_Channel Feed Failed to ThingSpeak."));
     }
+    Serial.println(F("Sending data to ThingSpeak Weather-Meta..."));
+    payload[0] = '\0';
+    BuildPayload(payload, fieldBuffer, 1, weatherdata.Rssi);
+    BuildPayload(payload, fieldBuffer, 2, weatherdata.Lqi);
+    BuildPayload(payload, fieldBuffer, 3, weatherdata.Loops);
+    BuildPayload(payload, fieldBuffer, 4, weatherdata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, weatherdata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 6, weatherdata.Batt_mV);
+    Serial.print(F("Payload: "));
+    Serial.println(payload);
+    if (! Weather_Meta.publish(payload)) {
+      Serial.println(F("Weather_Meta Feed Failed to ThingSpeak."));
+    }
+
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
@@ -641,14 +660,12 @@ void process_weatherdata() {
 void process_G2data() {
   if (crcFailed) {
 #ifdef ETHERNET_ENABLED
-    // If CRC was bad, then send 0 battery voltage to MQTT
-    if (! Slim_Batt.publish((uint32_t)0)) {
-      Serial.println(F("Failed to send zero Batt level for bad CRC to AIO. "));
-    }
+    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
+    process_failedCRC();
     payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 2, 0);
+    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
     if (! Temp_Slim.publish(payload)) {
-      Serial.println(F("Failed to send zero Batt level for bad CRC to ThingSpeak"));
+      Serial.println(F("Failed to send bad CRC to G2 ThingSpeak"));
     }
 #endif
   }
@@ -656,24 +673,24 @@ void process_G2data() {
     memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
     sensordata.Rssi = lastRssi;
     sensordata.Lqi = lastLqi;
-    Serial.println("Received packet from G2");
-    Serial.print("Temperature (F): ");
+    Serial.println(F("Received packet from G2"));
+    Serial.print(F("Temperature (F): "));
     Serial.print(sensordata.MSP_T / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(sensordata.MSP_T % 10);
-    Serial.print("Battery V: ");
+    Serial.print(F("Battery V: "));
     Serial.print(sensordata.Batt_mV / 1000);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.print((sensordata.Batt_mV / 100) % 10);
     Serial.print((sensordata.Batt_mV / 10) % 10);
     Serial.print(sensordata.Batt_mV % 10);
     if (sensordata.Batt_mV < 2200) {
-      Serial.print("   *** Out of Spec ***");
+      Serial.print(F("   *** Out of Spec ***"));
     }
-    Serial.println(" ");
-    Serial.print("Loops: ");
+    Serial.println(F(" "));
+    Serial.print(F("Loops: "));
     Serial.println(sensordata.Loops);
-    Serial.print("Millis: ");
+    Serial.print(F("Millis: "));
     Serial.println(sensordata.Millis);
 #ifdef LCD_ENABLED
     displayTempOnLCD(sensordata.MSP_T);
@@ -688,14 +705,14 @@ void process_G2data() {
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
-    Serial.println("Sending data to AIO...");
+    Serial.println(F("Sending data to AIO..."));
     if (! Slim_T.publish((int32_t)sensordata.MSP_T)) {
       Serial.println(F("MSP_T Failed"));
     }
     if (! Slim_Batt.publish((uint32_t)sensordata.Batt_mV)) {
       Serial.println(F("Batt Failed"));
     }
-    Serial.println("Sending data to ThingSpeak...");
+    Serial.println(F("Sending data to ThingSpeak..."));
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, sensordata.MSP_T);
     BuildPayload(payload, fieldBuffer, 2, sensordata.Batt_mV);
@@ -703,7 +720,7 @@ void process_G2data() {
     BuildPayload(payload, fieldBuffer, 4, sensordata.Millis);
     BuildPayload(payload, fieldBuffer, 5, sensordata.Rssi);
     BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
-    Serial.print("Payload: ");
+    Serial.print(F("Payload: "));
     Serial.println(payload);
     if (! Temp_Slim.publish(payload)) {
       Serial.println(F("Temp_Slim Feed Failed to ThingSpeak."));
@@ -718,31 +735,44 @@ void process_G2data() {
 
 void process_sensordata() {
   if (crcFailed) {
-    Serial.println(F("Bad CRC from Temp Sensor. "));
+    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
+    process_failedCRC();
+    payload[0] = '\0';
+    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
+    switch (rxPacket.from) {
+      case ADDRESS_SENSOR4:
+        if (! Temp_Sensor4.publish(payload)) {
+          Serial.println(F("Failed to send bad CRC to  ThingSpeak"));
+        }
+      case ADDRESS_SENSOR5:
+        if (! Temp_Sensor5.publish(payload)) {
+          Serial.println(F("Failed to send bad CRC to ThingSpeak"));
+        }
+    }
   }
   else {
     memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
     sensordata.Rssi = lastRssi;
     sensordata.Lqi = lastLqi;
-    Serial.print("Received packet from temp sensor: ");
+    Serial.print(F("Received packet from temp sensor: "));
     Serial.println(rxPacket.from);
-    Serial.print("Temperature (F): ");
+    Serial.print(F("Temperature (F): "));
     Serial.print(sensordata.MSP_T / 10);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.println(sensordata.MSP_T % 10);
-    Serial.print("Battery V: ");
+    Serial.print(F("Battery V: "));
     Serial.print(sensordata.Batt_mV / 1000);
-    Serial.print(".");
+    Serial.print(F("."));
     Serial.print((sensordata.Batt_mV / 100) % 10);
     Serial.print((sensordata.Batt_mV / 10) % 10);
     Serial.print(sensordata.Batt_mV % 10);
     if (sensordata.Batt_mV < 2200) {
-      Serial.print("   *** Out of Spec ***");
+      Serial.print(F("   *** Out of Spec ***"));
     }
-    Serial.println(" ");
-    Serial.print("Loops: ");
+    Serial.println(F(" "));
+    Serial.print(F("Loops: "));
     Serial.println(sensordata.Loops);
-    Serial.print("Millis: ");
+    Serial.print(F("Millis: "));
     Serial.println(sensordata.Millis);
 #ifdef LCD_ENABLED
     displayTempOnLCD(sensordata.MSP_T);
@@ -778,27 +808,27 @@ void process_sensordata() {
     BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
     switch (rxPacket.from) {
       case ADDRESS_SENSOR4:
-        Serial.println("Sending data to AIO...");
+        Serial.println(F("Sending data to AIO..."));
         if (! Sensor4_Temp.publish((int32_t)sensordata.MSP_T)) {
-          Serial.println(F("MSP_T Failed"));
+          Serial.println(F(F("MSP_T Failed")));
         }
         if (! Sensor4_Batt.publish((uint32_t)sensordata.Batt_mV)) {
           Serial.println(F("Batt Failed"));
         }
-        Serial.println("Sending data to ThingSpeak...");
-        Serial.print("Payload: ");
+        Serial.println(F("Sending data to ThingSpeak..."));
+        Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Sensor4.publish(payload)) {
           Serial.println(F("Temp_Sensor4 Feed Failed to ThingSpeak."));
         }
         break;
       case ADDRESS_SENSOR5:
-        Serial.println("Sending data to AIO...");
+        Serial.println(F("Sending data to AIO..."));
         if (! Sensor5_Temp.publish((int32_t)sensordata.MSP_T)) {
           Serial.println(F("MSP_T Failed"));
         }
-        Serial.println("Sending data to ThingSpeak...");
-        Serial.print("Payload: ");
+        Serial.println(F("Sending data to ThingSpeak..."));
+        Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Sensor5.publish(payload)) {
           Serial.println(F("Temp_Sensor5 Feed Failed to ThingSpeak."));
@@ -873,13 +903,13 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
     return;
   }
 
-  Serial.println("MQTT Disconnected.");
+  Serial.println(F("MQTT Disconnected."));
 #ifdef LCD_ENABLED
   MarkStatus = 1;
   myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
   printClientStatus(client);
-  Serial.print("Attempting reconnect to MQTT... ");
+  Serial.print(F("Attempting reconnect to MQTT... "));
   ret = mqtt_server->connect();
   clientStatus = printClientStatus(client);
   // W5200 chip seems to have a problem of getting stuck in CLOSE_WAIT state
@@ -887,10 +917,10 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
   // shield if we lose connection
   if (ret != 0) {
     lostConnectionCount++;
-    Serial.print("Ethernet connection lost #: ");
+    Serial.print(F("Ethernet connection lost #: "));
     Serial.println(lostConnectionCount);
     if (lostConnectionCount > 5) {
-      Serial.print("Ethernet connection loss over max: ");
+      Serial.print(F("Ethernet connection loss over max: "));
       Serial.println(lostConnectionCount);
       lostConnectionCount = 0;
 #ifdef OLED_ENABLED
@@ -904,10 +934,10 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
       delay(2);
       digitalWrite(W5200_RESET, HIGH);
       delay(155); // Need to delay at least 150 ms after reset
-      Serial.println("Starting Ethernet...");
+      Serial.println(F("Starting Ethernet..."));
       Ethernet.begin(mac);
       //  delay(1000);            // Give it a second to initialize
-      Serial.println("Ethernet enabled.");
+      Serial.println(F("Ethernet enabled."));
     }
   }
   Serial.println(mqtt_server->connectErrorString(ret));
@@ -934,61 +964,61 @@ int printClientStatus(EthernetClient* client) {
   int ClientStatus;
   ClientStatus = client->status();
   if (ClientStatus != 0x17) {
-    Serial.print("Ethernet Client Status: ");
-    Serial.print(" - ");
+    Serial.print(F("Ethernet Client Status: "));
+    Serial.print(F(" - "));
   }
   switch (ClientStatus) {
     case 0:
-      Serial.println("CLOSED");
+      Serial.println(F("CLOSED"));
       break;
     case 0x13:
-      Serial.println("INIT");
+      Serial.println(F("INIT"));
       break;
     case 0x14:
-      Serial.println("LISTEN");
+      Serial.println(F("LISTEN"));
       break;
     case 0x15:
-      Serial.println("SYNSENT");
+      Serial.println(F("SYNSENT"));
       break;
     case 0x16:
-      Serial.println("SYNRECV");
+      Serial.println(F("SYNRECV"));
       break;
     case 0x17:
 #ifdef PRINT_ALL_CLIENT_STATUS
-      Serial.print("Ethernet Client Status: ");
-      Serial.print(" - ");
-      Serial.println("ESTABLISHED");
+      Serial.print(F("Ethernet Client Status: "));
+      Serial.print(F(" - "));
+      Serial.println(F("ESTABLISHED"));
 #endif
       break;
     case 0x18:
-      Serial.println("FIN_WAIT");
+      Serial.println(F("FIN_WAIT"));
       break;
     case 0x1a:
-      Serial.println("CLOSING");
+      Serial.println(F("CLOSING"));
       break;
     case 0x1b:
-      Serial.println("TIME_WAIT");
+      Serial.println(F("TIME_WAIT"));
       break;
     case 0x1c:
-      Serial.println("CLOSE_WAIT");
+      Serial.println(F("CLOSE_WAIT"));
       break;
     case 0x1d:
-      Serial.println("LAST_ACK");
+      Serial.println(F("LAST_ACK"));
       break;
     case 0x22:
-      Serial.println("UTP");
+      Serial.println(F("UTP"));
       break;
     case 0x32:
-      Serial.println("IPRAW");
+      Serial.println(F("IPRAW"));
       break;
     case 0x42:
-      Serial.println("MACRAW");
+      Serial.println(F("MACRAW"));
       break;
     case 0x5f:
-      Serial.println("PPPOE");
+      Serial.println(F("PPPOE"));
       break;
     default:
-      Serial.print("Unknown State: ");
+      Serial.print(F("Unknown State: "));
       Serial.println(ClientStatus, 16);
       break;
   }
@@ -1054,6 +1084,19 @@ void buildStatusString() {
 #endif
 
 #ifdef ETHERNET_ENABLED
+void process_failedCRC() {
+  payload[0] = '\0';
+  BuildPayload(payload, fieldBuffer, 1, lastRssi);
+  BuildPayload(payload, fieldBuffer, 2, lastLqi);
+  BuildPayload(payload, fieldBuffer, 3, rxPacket.from);
+  BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
+  if (! Sensor_Errors.publish(payload)) {
+    Serial.println(F("Failed to send bad CRC to ThingSpeak"));
+  }
+}
+#endif
+
+#ifdef ETHERNET_ENABLED
 /*******************************************************************
   // BuildPayload() functions for ThingSpeak MQTT
   // See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
@@ -1067,7 +1110,7 @@ void buildStatusString() {
 void BuildPayload(char* msgBuffer, int fieldNum, char* dataField) {
   char  numBuffer[4];
   numBuffer[0] = '\0';
-  
+
   if (fieldNum < 9) {
     if (msgBuffer[0] == '\0')
       strcat(msgBuffer, "field");
@@ -1088,7 +1131,7 @@ void BuildPayload(char* msgBuffer, int fieldNum, char* dataField) {
   // Note that ThingSpeak defines several other Payload Parameters beyond
   // field1-8. I have only implemented the "status" field, which is the 12th
   // paramter type in the API docs, hence, use "12" for status, even though
-  // anything > 8 would work as is currently coded. 
+  // anything > 8 would work as is currently coded.
 }
 
 void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, int data) {
@@ -1106,7 +1149,7 @@ void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, unsigned
   BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
 }
 
-void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, char* data) {
+void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, const char* data) {
   sprintf(dataFieldBuffer, data);
   BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
 }
