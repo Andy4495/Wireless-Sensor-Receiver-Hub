@@ -69,21 +69,6 @@
 /* BOARD CONFIGURATION AND OTHER DEFINES
    -------------------------------------
 
-   LED to signal received message:
-   For FR4133:
-      #define BOARD_LED LED2
-      (Do not use LED1, as this conflicts with the UART
-   For FR6989:
-      #define BOARD_LED RED_LED
-      or
-      #define BOARD_LED GREEN_LED
-   For other LaunchPads, check the user guides
-
-   When using a LaunchPad with a built-in LCD (FR4133, FR6989):
-      #define LCD_ENABLED
-   On other LaunchPads, comment out the line:
-      //#define LCD_ENABLED
-
    To use an external Newhaven OLED display:
       #define OLED_ENABLED
    Comment out the line if the OLED is not used:
@@ -105,11 +90,35 @@
      //#define PRINT_ALL_CLIENT_STATUS
    It can be uncommented to help debug connection issues
 */
-#define BOARD_LED GREEN_LED
-#define LCD_ENABLED
 #define OLED_ENABLED
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
+
+#if defined(__MSP430FR4133__)
+#define LCD_ENABLED
+#define BOARD_LED LED2
+#endif
+
+#if defined(__MSP430FR6989__)
+#define LCD_ENABLED
+#define BOARD_LED GREEN_LED
+#endif
+
+#if defined(__MSP430G2553__)
+#define BOARD_LED GREEN_LED
+#endif
+
+#if defined(__MSP430F5529__)
+#define BOARD_LED GREEN_LED
+#endif
+
+#if defined(__MSP430FR2433__)
+#define BOARD_LED LED2
+#endif
+
+#if defined(__MSP430FR5969__)
+#define BOARD_LED LED2
+#endif
 
 /* CONTROL PIN DEFINITIONS
    -----------------------
@@ -184,12 +193,14 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
      #define AIO_SERVERPORT  Port number of your MQTT server, e.g. 1883
      #define AIO_USERNAME    "Username for MQTT server account"
      #define AIO_KEY         "MQTT key required for your MQTT server account"
+   If using ThingSpeak, then WRITE keys for each channel may also be #defined here. 
 */
 EthernetClient client_aio;
 EthernetClient client_ts;
 Adafruit_MQTT_Client aio(&client_aio, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
-char payload[128];
+char payload[128];    // ThingSpeak payload string
+char fieldBuffer[32];  // Temporary buffer to construct payload string 
 #endif
 
 // -----------------------------------------------------------------------------
@@ -263,13 +274,16 @@ int  RadioStatus = 0;
 int  TxStatus = 0;
 #endif
 
-/* MQTT publishing feeds
-     Each feed that you wish to publish needs to be defined.
-     Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>, for example:
-        Adafruit_MQTT_Publish pressure = Adafruit_MQTT_Publish(&mqtt,  AIO_USERNAME "/feeds/pressure");
-*/
 #ifdef ETHERNET_ENABLED
-/* The MQTT_private_feeds.h file needs to include the following definitions
+/***** MQTT publishing feeds *****
+   Each feed/channel that you wish to publish needs to be defined.
+     - Adafruit IO feeds follow the form: <username>/feeds/<feedname>, for example:
+         Adafruit_MQTT_Publish pressure = Adafruit_MQTT_Publish(&mqtt,  AIO_USERNAME "/feeds/pressure");
+     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example: 
+         Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt, 
+                                        "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
+         See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
+   The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
    specific to your configuration.
 */
 #include "MQTT_private_feeds.h"
@@ -516,7 +530,7 @@ void process_weatherdata() {
       Serial.println(F("Failed to send zero Batt level for bad CRC to AIO. "));
     }
     payload[0] = '\0';
-    BuildPayload(payload, 8, 0);
+    BuildPayload(payload, fieldBuffer, 8, 0);
     if (! Weather_Channel.publish(payload)) {
       Serial.println(F("Failed to send zero Batt level for bad CRC to ThingSpeak"));
     }
@@ -603,14 +617,14 @@ void process_weatherdata() {
     //    }
     Serial.println("Sending data to ThingSpeak...");
     payload[0] = '\0';
-    BuildPayload(payload, 1, weatherdata.BME280_T);
-    BuildPayload(payload, 2, weatherdata.TMP107_Te);
-    BuildPayload(payload, 3, weatherdata.TMP107_Ti);
-    BuildPayload(payload, 4, weatherdata.MSP_T);
-    BuildPayload(payload, 5, weatherdata.BME280_H);
-    BuildPayload(payload, 6, weatherdata.BME280_P);
-    BuildPayload(payload, 7, weatherdata.LUX);
-    BuildPayload(payload, 8, weatherdata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 1, weatherdata.BME280_T);
+    BuildPayload(payload, fieldBuffer, 2, weatherdata.TMP107_Te);
+    BuildPayload(payload, fieldBuffer, 3, weatherdata.TMP107_Ti);
+    BuildPayload(payload, fieldBuffer, 4, weatherdata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 5, weatherdata.BME280_H);
+    BuildPayload(payload, fieldBuffer, 6, weatherdata.BME280_P);
+    BuildPayload(payload, fieldBuffer, 7, weatherdata.LUX);
+    BuildPayload(payload, fieldBuffer, 8, weatherdata.Batt_mV);
     Serial.print("Payload: ");
     Serial.println(payload);
     if (! Weather_Channel.publish(payload)) {
@@ -632,7 +646,7 @@ void process_G2data() {
       Serial.println(F("Failed to send zero Batt level for bad CRC to AIO. "));
     }
     payload[0] = '\0';
-    BuildPayload(payload, 2, 0);
+    BuildPayload(payload, fieldBuffer, 2, 0);
     if (! Temp_Slim.publish(payload)) {
       Serial.println(F("Failed to send zero Batt level for bad CRC to ThingSpeak"));
     }
@@ -683,12 +697,12 @@ void process_G2data() {
     }
     Serial.println("Sending data to ThingSpeak...");
     payload[0] = '\0';
-    BuildPayload(payload, 1, sensordata.MSP_T);
-    BuildPayload(payload, 2, sensordata.Batt_mV);
-    BuildPayload(payload, 3, sensordata.Loops);
-    BuildPayload(payload, 4, sensordata.Millis);
-    BuildPayload(payload, 5, sensordata.Rssi);
-    BuildPayload(payload, 6, sensordata.Lqi);
+    BuildPayload(payload, fieldBuffer, 1, sensordata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 2, sensordata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 3, sensordata.Loops);
+    BuildPayload(payload, fieldBuffer, 4, sensordata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, sensordata.Rssi);
+    BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
     Serial.print("Payload: ");
     Serial.println(payload);
     if (! Temp_Slim.publish(payload)) {
@@ -756,12 +770,12 @@ void process_sensordata() {
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
     payload[0] = '\0';
-    BuildPayload(payload, 1, sensordata.MSP_T);
-    BuildPayload(payload, 2, sensordata.Batt_mV);
-    BuildPayload(payload, 3, sensordata.Loops);
-    BuildPayload(payload, 4, sensordata.Millis);
-    BuildPayload(payload, 5, sensordata.Rssi);
-    BuildPayload(payload, 6, sensordata.Lqi);
+    BuildPayload(payload, fieldBuffer, 1, sensordata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 2, sensordata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 3, sensordata.Loops);
+    BuildPayload(payload, fieldBuffer, 4, sensordata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, sensordata.Rssi);
+    BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
     switch (rxPacket.from) {
       case ADDRESS_SENSOR4:
         Serial.println("Sending data to AIO...");
@@ -1040,45 +1054,60 @@ void buildStatusString() {
 #endif
 
 #ifdef ETHERNET_ENABLED
-void BuildPayload(char* msgBuffer, int fieldNum, int data) {
-  char  numBuffer[16];
+/*******************************************************************
+  // BuildPayload() functions for ThingSpeak MQTT
+  // See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
+  // Overloaded function formats data field based on parameter type.
+  // Be sure to set msgBuffer[0] = '\0' to start a new payload string
+  // Use fieldNum==12 to format the Status field
+*******************************************************************/
 
-  if (msgBuffer[0] == '\0')
-    strcat(msgBuffer, "field");
-  else
-    strcat(msgBuffer, "&field");
-  sprintf(numBuffer, "%d", fieldNum);
-  strcat(msgBuffer, numBuffer);
-  strcat(msgBuffer, "=");
-  sprintf(numBuffer, "%d", data);
-  strcat(msgBuffer, numBuffer);
+// This is the "worker" version that is called by all other versions of the function
+// It is also used if a string is already available and does not need to be converted
+void BuildPayload(char* msgBuffer, int fieldNum, char* dataField) {
+  char  numBuffer[4];
+  numBuffer[0] = '\0';
+  
+  if (fieldNum < 9) {
+    if (msgBuffer[0] == '\0')
+      strcat(msgBuffer, "field");
+    else
+      strcat(msgBuffer, "&field");
+    sprintf(numBuffer, "%d", fieldNum);
+    strcat(msgBuffer, numBuffer);
+    strcat(msgBuffer, "=");
+    strcat(msgBuffer, dataField);
+  }
+  else { // fieldNum >= 9
+    if (msgBuffer[0] == '\0')
+      strcat(msgBuffer, "status=");
+    else
+      strcat(msgBuffer, "&status=");
+    strcat(msgBuffer, dataField);
+  }
+  // Note that ThingSpeak defines several other Payload Parameters beyond
+  // field1-8. I have only implemented the "status" field, which is the 12th
+  // paramter type in the API docs, hence, use "12" for status, even though
+  // anything > 8 would work as is currently coded. 
 }
 
-void BuildPayload(char* msgBuffer, int fieldNum, unsigned int data) {
-  char  numBuffer[16];
-
-  if (msgBuffer[0] == '\0')
-    strcat(msgBuffer, "field");
-  else
-    strcat(msgBuffer, "&field");
-  sprintf(numBuffer, "%d", fieldNum);
-  strcat(msgBuffer, numBuffer);
-  strcat(msgBuffer, "=");
-  sprintf(numBuffer, "%u", data);
-  strcat(msgBuffer, numBuffer);
+void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, int data) {
+  sprintf(dataFieldBuffer, "%d", data);
+  BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
 }
 
-void BuildPayload(char* msgBuffer, int fieldNum, unsigned long data) {
-  char  numBuffer[16];
+void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, unsigned int data) {
+  sprintf(dataFieldBuffer, "%u", data);
+  BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
+}
 
-  if (msgBuffer[0] == '\0')
-    strcat(msgBuffer, "field");
-  else
-    strcat(msgBuffer, "&field");
-  sprintf(numBuffer, "%d", fieldNum);
-  strcat(msgBuffer, numBuffer);
-  strcat(msgBuffer, "=");
-  sprintf(numBuffer, "%lu", data);
-  strcat(msgBuffer, numBuffer);
+void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, unsigned long data) {
+  sprintf(dataFieldBuffer, "%lu", data);
+  BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
+}
+
+void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, char* data) {
+  sprintf(dataFieldBuffer, data);
+  BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
 }
 #endif
