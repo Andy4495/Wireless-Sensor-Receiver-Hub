@@ -1089,7 +1089,15 @@ void process_failedCRC() {
   BuildPayload(payload, fieldBuffer, 1, lastRssi);
   BuildPayload(payload, fieldBuffer, 2, lastLqi);
   BuildPayload(payload, fieldBuffer, 3, rxPacket.from);
-  BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
+  BuildPayload(payload, fieldBuffer, 12, "CRC failed from: ");
+  sprintf(fieldBuffer, "%d", rxPacket.from);
+  strcat(payload, fieldBuffer);
+  strcat(payload, ", RSSI: ");
+  sprintf(fieldBuffer, "%d", lastRssi);
+  strcat(payload, fieldBuffer);
+  strcat(payload, ", LQI: ");
+  sprintf(fieldBuffer, "%d", lastLqi);
+  strcat(payload, fieldBuffer);
   if (! Sensor_Errors.publish(payload)) {
     Serial.println(F("Failed to send bad CRC to ThingSpeak"));
   }
