@@ -28,6 +28,7 @@
    2.7 - 01/25/18 - A.T. - Add support for ThingSpeak IoT
                          - Put constant strings in F() macro for better
                            compatiblity for running on Arduino
+   2.8  - 01/30/18 -A.T. - Tickle a pin for external watchdog module.
 */
 
 /**
@@ -53,6 +54,12 @@
    - Sensor CC110L device address
    - Data payload structure
    - Output stream (Serial, LCD, and/or IP)
+
+   The sketch toggles Pin 12 every time through loop() so
+   long as the mqtt connection is valid. An external
+   watchdog module can monitor the signal and reset the
+   receiver hub if the receiver hub unable to reconnect.
+
 **/
 /**
    EXTERNAL LIBRARIES:
@@ -138,6 +145,7 @@
 #define W5200_RESET 5
 #define W5200_CS    8
 #define CC110L_CS  18
+#define WD_PIN     12             // Toggle for external watchdog
 
 /* OLED PIN AND HARDWARE DEFINITIONS
    ---------------------------------
@@ -168,7 +176,7 @@ LCD_LAUNCHPAD myLCD;
 
 #ifdef OLED_ENABLED
 #include <NewhavenOLED.h>
-byte row_address[2] = {0x80, 0xC0};   // DDRAM addresses for rows (2-row models)
+const byte row_address[2] = {0x80, 0xC0};   // DDRAM addresses for rows (2-row models)
 NewhavenOLED oled(OLED_ROWS, OLED_COLS, OLED_SI, OLED_SCK, OLED_CS, NO_PIN);
 byte oled_text[OLED_ROWS][OLED_COLS + 1] =
 { "Sensor Rx Hub   ",
@@ -201,8 +209,8 @@ EthernetClient client_aio;
 EthernetClient client_ts;
 Adafruit_MQTT_Client aio(&client_aio, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
-char payload[128];    // ThingSpeak payload string
-char fieldBuffer[32];  // Temporary buffer to construct payload string
+char payload[110];    // ThingSpeak payload string
+char fieldBuffer[20];  // Temporary buffer to construct a single field of payload string
 #endif
 
 // -----------------------------------------------------------------------------
@@ -264,6 +272,7 @@ int lostConnectionCount = 0;
 int lastRssi, lastLqi;
 unsigned long lastG2Millis, lastWeatherMillis;
 int crcFailed = 0; // 1 is bad CRC, 0 is good CRC
+int WD_state = 0;
 
 #ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
@@ -271,10 +280,10 @@ int temperatures[LAST_ADDRESS - 1]; // Store last temp value received
 int batteries[LAST_ADDRESS - 1];  // Store last battery reading
 // The following values store the state of the status symbols so they
 // can be restored after an LCD.clear() operation:
-int  MarkStatus = 0;
 int  RadioStatus = 0;
 int  TxStatus = 0;
 #endif
+int  MarkStatus = 0; // Need this state regardless of LCD, so put outside ifdef
 
 #ifdef ETHERNET_ENABLED
 /***** MQTT publishing feeds *****
@@ -310,18 +319,35 @@ void setup()
   digitalWrite(W5200_RESET, HIGH);
   delay(200);         // RESET needs to be cleared for at least 150 ms before operating
 
+  // Set up the watchdog pin
+  pinMode(WD_PIN, OUTPUT);
+  digitalWrite(WD_PIN, WD_state);
+
   // Setup serial for status printing.
   Serial.begin(9600);
   Serial.println(F(" "));
   Serial.println(F("Sensor receiver hub with CC110L."));
   delay(500);
 
+#if defined(__MSP430FR6989__)
+  // Lock down FRAM - disable writes to program memory
+  Serial.println("Writing FRAM control registers.");
+  unsigned int* MPUCTL0_reg = (unsigned int*) 0x05a0;
+  unsigned int* MPUSAM_reg  = (unsigned int*)0x05a8;
+  *MPUCTL0_reg = (unsigned int) 0xa501;
+  *MPUSAM_reg  = (unsigned int) 0x7555;
+  Serial.print("MPUCTL0: ");
+  Serial.println((unsigned int)*(int*)MPUCTL0_reg, HEX);
+  Serial.print("MPUSAM: ");
+  Serial.println((unsigned int)*(int*)MPUSAM_reg, HEX);
+#endif
+  
+  MarkStatus = 1;
 #ifdef LCD_ENABLED
   myLCD.init();
 #ifdef ETHERNET_ENABLED
   myLCD.displayText(F("ETHER "));
   // Display the "!" LCD symbol to show we are initializing
-  MarkStatus = 1;
   myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
   //  delay(500);
 #endif
@@ -378,15 +404,25 @@ void loop()
   // connection and automatically reconnect when disconnected).
   MQTT_connect(&aio, &client_aio);
   MQTT_connect(&thingspeak, &client_ts);
-  int EthStatus, ClientStatus;
 #ifdef PRINT_ALL_CLIENT_STATUS
-  EthStatus = Ethernet.maintain();
   Serial.print(F("Ethernet Maintain status: "));
-  Serial.println(EthStatus);
+  Serial.println(Ethernet.maintain());
 #endif
-  ClientStatus = printClientStatus(&client_aio);
-  ClientStatus = printClientStatus(&client_ts);
+  printClientStatus(&client_aio);
+  printClientStatus(&client_ts);
 #endif
+
+  // Flip the watchdog pin once per loop if we are connected
+  // If there is no ethernet, then flip the pin every time through loop
+#ifdef ETHERNET_ENABLED
+  if (MarkStatus == 0) {
+#endif
+    WD_state = !WD_state;
+    digitalWrite(WD_PIN, WD_state);
+#ifdef ETHERNET_ENABLED
+  }
+#endif
+
 
 #ifdef OLED_ENABLED
   if ((displayTimeoutCount == 0) && (digitalRead(PUSH2) == LOW)) {
@@ -472,7 +508,8 @@ void loop()
 #endif
   }
   else {
-    Serial.println(F("Nothing received."));
+    Serial.print(F("Nothing received: "));
+    Serial.println(millis());
   }
 
 #ifdef LCD_ENABLED
@@ -515,16 +552,16 @@ void loop()
   if (! aio.ping()) {
     aio.disconnect();
     Serial.println(F("AIO MQTT ping failed, disconnecting."));
-#ifdef LCD_ENABLED
     MarkStatus = 1;
+#ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
   }
   if (! thingspeak.ping()) {
     thingspeak.disconnect();
     Serial.println(F("ThingSpeak MQTT ping failed, disconnecting."));
-#ifdef LCD_ENABLED
     MarkStatus = 1;
+#ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
   }
@@ -892,26 +929,27 @@ void displayBattOnLCD(int mV) {
 // Should be called in the loop function and it will take care of connecting.
 #ifdef ETHERNET_ENABLED
 void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
-  int8_t ret, clientStatus;
+  int8_t ret;
 
   // Return if already connected.
   if (mqtt_server->connected()) {
-#ifdef LCD_ENABLED
     MarkStatus = 0;
+#ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
     return;
   }
 
   Serial.println(F("MQTT Disconnected."));
-#ifdef LCD_ENABLED
   MarkStatus = 1;
+#ifdef LCD_ENABLED
   myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
   printClientStatus(client);
-  Serial.print(F("Attempting reconnect to MQTT... "));
+  Serial.print(F("Attempting reconnect to MQTT: "));
+  Serial.println(millis());
   ret = mqtt_server->connect();
-  clientStatus = printClientStatus(client);
+  printClientStatus(client);
   // W5200 chip seems to have a problem of getting stuck in CLOSE_WAIT state
   // There may be other issues, so just force a hard reset on ethernet
   // shield if we lose connection
@@ -941,12 +979,12 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
     }
   }
   Serial.println(mqtt_server->connectErrorString(ret));
-#ifdef LCD_ENABLED
   if (ret == 0) {
     MarkStatus = 0;
+#ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
-  }
 #endif
+  }
   /* Comment out the loop; just try once and let loop() take care of reconnecting
     while ((ret = mqtt_server->connect()) != 0) { // connect will return 0 for connected
       Serial.println(mqtt_server->connectErrorString(ret));
