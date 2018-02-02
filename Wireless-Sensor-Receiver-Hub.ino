@@ -30,9 +30,11 @@
                            compatiblity for running on Arduino
    2.8 - 01/30/18 - A.T. - Tickle a pin for external watchdog module.
                            Add program FRAM write protection to FR6989
-                           Optimize buffer sizes to reduce RAM usage. 
+                           Optimize buffer sizes to reduce RAM usage.
    3.0 - 02/01/18 - A.T. - Update message structure to align on word boundary.
-
+   3.1 - 02/02/18 - A.T. - Combine Rx buffer, weather struct, temp struct into
+                           union to save RAM and decrease copying of data.
+                           Disable OLED by default.
 */
 
 /**
@@ -103,7 +105,7 @@
      //#define PRINT_ALL_CLIENT_STATUS
    It can be uncommented to help debug connection issues
 */
-#define OLED_ENABLED
+//#define OLED_ENABLED
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
@@ -229,22 +231,6 @@ char fieldBuffer[20];  // Temporary buffer to construct a single field of payloa
 
 #define RF_GDO0       19
 
-enum {WEATHER_STRUCT, TEMP_STRUCT};
-
-struct sPacket  // CC110L packet structure
-{
-  uint8_t from;           // Local node address that message originated from
-  uint8_t struct_type;    // Flag to indicate type of message structure
-  uint8_t message[58];    // Local node message
-};
-
-// -----------------------------------------------------------------------------
-/**
-    Global data
-*/
-
-struct sPacket rxPacket;
-
 struct WeatherData {
   int             BME280_T;  // Tenth degrees F
   unsigned int    BME280_P;  // Pressure in inches of Hg * 100
@@ -256,10 +242,6 @@ struct WeatherData {
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
   unsigned long   Millis;
-  // Rssi and Lqi are not part of the payload and therefore need to
-  // be at the end of the struct.
-  int             Rssi;
-  int             Lqi;
 };
 
 struct TempSensor {
@@ -267,19 +249,38 @@ struct TempSensor {
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
   unsigned long   Millis;
-  // Rssi and Lqi are not part of the payload and therefore need to
-  // be at the end of the struct.
-  int             Rssi;
-  int             Lqi;
 };
 
-WeatherData weatherdata;
-TempSensor sensordata;
+// Check "struct_type" member for the type of structure to
+// decode in the sPacket union.
+enum {WEATHER_STRUCT, TEMP_STRUCT};
+
+struct sPacket  // CC110L packet structure
+{
+  uint8_t from;              // Local node address that message originated from
+  uint8_t struct_type;       // Filler byte to keep rest of struct on word boundary
+                             // Also used to indicate type of struct in union
+  union {
+    uint8_t message[58];     // Local node message keep even word boundary
+    WeatherData weatherdata;
+    TempSensor  sensordata;
+  };
+};
+
+// -----------------------------------------------------------------------------
+/**
+    Global data
+*/
+
+struct sPacket rxPacket;
+
 int lostConnectionCount = 0;
 int lastRssi, lastLqi;
-unsigned long lastG2Millis, lastWeatherMillis;
 int crcFailed = 0; // 1 is bad CRC, 0 is good CRC
 int WD_state = 0;
+#ifdef OLED_ENABLED
+unsigned long lastG2Millis, lastWeatherMillis;
+#endif
 
 #ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
@@ -356,7 +357,6 @@ void setup()
   myLCD.displayText(F("ETHER "));
   // Display the "!" LCD symbol to show we are initializing
   myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
-  //  delay(500);
 #endif
   Serial.println(F("Started LCD display"));
 #endif
@@ -371,7 +371,6 @@ void setup()
 #ifdef ETHERNET_ENABLED
   Serial.println(F("Starting Ethernet..."));
   Ethernet.begin(mac);
-  //  delay(1000);            // Give it a second to initialize
   Serial.println(F("Ethernet enabled."));
   MQTT_connect(&aio, &client_aio);
   MQTT_connect(&thingspeak, &client_ts);
@@ -382,7 +381,7 @@ void setup()
   rxPacket.struct_type = 0;  // Zero them out here just for completeness
   memset(rxPacket.message, 0, sizeof(rxPacket.message));
 
-  pinMode(BOARD_LED, OUTPUT);       // Use red LED to display message reception
+  pinMode(BOARD_LED, OUTPUT);       // Flash LED to indicate ready to receive
   digitalWrite(BOARD_LED, HIGH);
   delay(500);
   digitalWrite(BOARD_LED, LOW);
@@ -390,8 +389,10 @@ void setup()
   pinMode(PUSH1, INPUT_PULLUP);     // PUSH1 cycles LCD display
   pinMode(PUSH2, INPUT_PULLUP);     // PUSH2 temporarily turns on OLED
 
+#ifdef OLED_ENABLED
   lastG2Millis = millis();
   lastWeatherMillis = lastG2Millis;
+#endif
 
 #ifdef LCD_ENABLED
   for (int i = 0; i < (LAST_ADDRESS - 2); i++) {
@@ -430,7 +431,6 @@ void loop()
 #ifdef ETHERNET_ENABLED
   }
 #endif
-
 
 #ifdef OLED_ENABLED
   if ((displayTimeoutCount == 0) && (digitalRead(PUSH2) == LOW)) {
@@ -494,8 +494,6 @@ void loop()
         process_weatherdata();
         break;
       case (ADDRESS_G2):
-        process_G2data();
-        break;
       case (ADDRESS_SENSOR4):
       case (ADDRESS_SENSOR5):
         process_sensordata();
@@ -589,59 +587,56 @@ void process_weatherdata() {
 #endif
   }
   else {
-    memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
-    weatherdata.Rssi = lastRssi;
-    weatherdata.Lqi = lastLqi;
     Serial.println(F("Temperature (F): "));
     Serial.print(F("    BME280:  "));
-    Serial.print(weatherdata.BME280_T / 10);
+    Serial.print(rxPacket.weatherdata.BME280_T / 10);
     Serial.print(F("."));
-    Serial.println(weatherdata.BME280_T % 10);
+    Serial.println(rxPacket.weatherdata.BME280_T % 10);
     Serial.print(F("    TMP106 (Die):  "));
-    Serial.print(weatherdata.TMP107_Ti / 10);
+    Serial.print(rxPacket.weatherdata.TMP107_Ti / 10);
     Serial.print(F("."));
-    Serial.println(weatherdata.TMP107_Ti % 10);
+    Serial.println(rxPacket.weatherdata.TMP107_Ti % 10);
     Serial.print(F("    TMP106 (Ext):  "));
-    Serial.print(weatherdata.TMP107_Te / 10);
+    Serial.print(rxPacket.weatherdata.TMP107_Te / 10);
     Serial.print(F("."));
-    Serial.println(weatherdata.TMP107_Te % 10);
+    Serial.println(rxPacket.weatherdata.TMP107_Te % 10);
     Serial.print(F("    MSP Die: "));
-    Serial.print(weatherdata.MSP_T / 10);
+    Serial.print(rxPacket.weatherdata.MSP_T / 10);
     Serial.print(F("."));
-    Serial.println(weatherdata.MSP_T % 10);
+    Serial.println(rxPacket.weatherdata.MSP_T % 10);
     Serial.print(F("Pressure (inHg): "));
-    Serial.print(weatherdata.BME280_P / 100);
+    Serial.print(rxPacket.weatherdata.BME280_P / 100);
     Serial.print(F("."));
-    Serial.print((weatherdata.BME280_P / 10) % 10);
-    Serial.println(weatherdata.BME280_P % 10);
+    Serial.print((rxPacket.weatherdata.BME280_P / 10) % 10);
+    Serial.println(rxPacket.weatherdata.BME280_P % 10);
     Serial.print(F("%RH: "));
-    Serial.print(weatherdata.BME280_H / 10);
+    Serial.print(rxPacket.weatherdata.BME280_H / 10);
     Serial.print(F("."));
-    Serial.println(weatherdata.BME280_H % 10);
+    Serial.println(rxPacket.weatherdata.BME280_H % 10);
     Serial.print(F("Lux: "));
-    Serial.println(weatherdata.LUX);
+    Serial.println(rxPacket.weatherdata.LUX);
     Serial.print(F("Battery V: "));
-    Serial.print(weatherdata.Batt_mV / 1000);
+    Serial.print(rxPacket.weatherdata.Batt_mV / 1000);
     Serial.print(F("."));
-    Serial.print((weatherdata.Batt_mV / 100) % 10);
-    Serial.print((weatherdata.Batt_mV / 10) % 10);
-    Serial.print(weatherdata.Batt_mV % 10);
-    if (weatherdata.Batt_mV < 2200) {
+    Serial.print((rxPacket.weatherdata.Batt_mV / 100) % 10);
+    Serial.print((rxPacket.weatherdata.Batt_mV / 10) % 10);
+    Serial.print(rxPacket.weatherdata.Batt_mV % 10);
+    if (rxPacket.weatherdata.Batt_mV < 2200) {
       Serial.print(F("   *** Out of Spec ***"));
     }
     Serial.println(F(" "));
     Serial.print(("Loops: "));
-    Serial.println(weatherdata.Loops);
+    Serial.println(rxPacket.weatherdata.Loops);
     Serial.print(("Millis: "));
-    Serial.println(weatherdata.Millis);
+    Serial.println(rxPacket.weatherdata.Millis);
 
 #ifdef LCD_ENABLED
-    displayTempOnLCD(weatherdata.BME280_T);
+    displayTempOnLCD(rxPacket.weatherdata.BME280_T);
     myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-    displayBattOnLCD(weatherdata.Batt_mV);
+    displayBattOnLCD(rxPacket.weatherdata.Batt_mV);
     currentDisplay = ADDRESS_WEATHER;
-    temperatures[ADDRESS_WEATHER - 2] = weatherdata.BME280_T;
-    batteries[ADDRESS_WEATHER - 2]    = weatherdata.Batt_mV;
+    temperatures[ADDRESS_WEATHER - 2] = rxPacket.weatherdata.BME280_T;
+    batteries[ADDRESS_WEATHER - 2]    = rxPacket.weatherdata.Batt_mV;
 #endif
 
 #ifdef ETHERNET_ENABLED
@@ -649,32 +644,32 @@ void process_weatherdata() {
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
     Serial.println(F("Sending data to AIO..."));
-    if (! Weather_T_SHT21.publish((int32_t)weatherdata.BME280_T)) {
+    if (! Weather_T_SHT21.publish((int32_t)rxPacket.weatherdata.BME280_T)) {
       Serial.println(F("BME280_T Failed"));
     }
-    if (! Weather_P.publish((uint32_t)weatherdata.BME280_P)) {
+    if (! Weather_P.publish((uint32_t)rxPacket.weatherdata.BME280_P)) {
       Serial.println(F("BME280_P Failed"));
     }
-    if (! Weather_RH.publish((uint32_t)weatherdata.BME280_H)) {
+    if (! Weather_RH.publish((uint32_t)rxPacket.weatherdata.BME280_H)) {
       Serial.println(F("RH Failed"));
     }
-    if (! Weather_LUX.publish((uint32_t)weatherdata.LUX)) {
+    if (! Weather_LUX.publish((uint32_t)rxPacket.weatherdata.LUX)) {
       Serial.println(F("LUX Failed"));
     }
-    if (! Weather_Batt.publish((uint32_t)weatherdata.Batt_mV)) {
+    if (! Weather_Batt.publish((uint32_t)rxPacket.weatherdata.Batt_mV)) {
       Serial.println(F("Batt Failed"));
     }
 
     Serial.println(F("Sending data to ThingSpeak Weather_Channel..."));
     payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 1, weatherdata.BME280_T);
-    BuildPayload(payload, fieldBuffer, 2, weatherdata.TMP107_Te);
-    BuildPayload(payload, fieldBuffer, 3, weatherdata.TMP107_Ti);
-    BuildPayload(payload, fieldBuffer, 4, weatherdata.MSP_T);
-    BuildPayload(payload, fieldBuffer, 5, weatherdata.BME280_H);
-    BuildPayload(payload, fieldBuffer, 6, weatherdata.BME280_P);
-    BuildPayload(payload, fieldBuffer, 7, weatherdata.LUX);
-    BuildPayload(payload, fieldBuffer, 8, weatherdata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 1, rxPacket.weatherdata.BME280_T);
+    BuildPayload(payload, fieldBuffer, 2, rxPacket.weatherdata.TMP107_Te);
+    BuildPayload(payload, fieldBuffer, 3, rxPacket.weatherdata.TMP107_Ti);
+    BuildPayload(payload, fieldBuffer, 4, rxPacket.weatherdata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 5, rxPacket.weatherdata.BME280_H);
+    BuildPayload(payload, fieldBuffer, 6, rxPacket.weatherdata.BME280_P);
+    BuildPayload(payload, fieldBuffer, 7, rxPacket.weatherdata.LUX);
+    BuildPayload(payload, fieldBuffer, 8, rxPacket.weatherdata.Batt_mV);
     Serial.print(F("Payload: "));
     Serial.println(payload);
     if (! Weather_Channel.publish(payload)) {
@@ -682,12 +677,12 @@ void process_weatherdata() {
     }
     Serial.println(F("Sending data to ThingSpeak Weather-Meta..."));
     payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 1, weatherdata.Rssi);
-    BuildPayload(payload, fieldBuffer, 2, weatherdata.Lqi);
-    BuildPayload(payload, fieldBuffer, 3, weatherdata.Loops);
-    BuildPayload(payload, fieldBuffer, 4, weatherdata.Millis);
-    BuildPayload(payload, fieldBuffer, 5, weatherdata.MSP_T);
-    BuildPayload(payload, fieldBuffer, 6, weatherdata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 1, lastRssi);
+    BuildPayload(payload, fieldBuffer, 2, lastLqi);
+    BuildPayload(payload, fieldBuffer, 3, rxPacket.weatherdata.Loops);
+    BuildPayload(payload, fieldBuffer, 4, rxPacket.weatherdata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, rxPacket.weatherdata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 6, rxPacket.weatherdata.Batt_mV);
     Serial.print(F("Payload: "));
     Serial.println(payload);
     if (! Weather_Meta.publish(payload)) {
@@ -698,83 +693,9 @@ void process_weatherdata() {
     myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
 #endif
+#ifdef OLED_ENABLED
     lastWeatherMillis = millis();
-  }
-}
-
-void process_G2data() {
-  if (crcFailed) {
-#ifdef ETHERNET_ENABLED
-    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
-    process_failedCRC();
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
-    if (! Temp_Slim.publish(payload)) {
-      Serial.println(F("Failed to send bad CRC to G2 ThingSpeak"));
-    }
 #endif
-  }
-  else {
-    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-    sensordata.Rssi = lastRssi;
-    sensordata.Lqi = lastLqi;
-    Serial.println(F("Received packet from G2"));
-    Serial.print(F("Temperature (F): "));
-    Serial.print(sensordata.MSP_T / 10);
-    Serial.print(F("."));
-    Serial.println(sensordata.MSP_T % 10);
-    Serial.print(F("Battery V: "));
-    Serial.print(sensordata.Batt_mV / 1000);
-    Serial.print(F("."));
-    Serial.print((sensordata.Batt_mV / 100) % 10);
-    Serial.print((sensordata.Batt_mV / 10) % 10);
-    Serial.print(sensordata.Batt_mV % 10);
-    if (sensordata.Batt_mV < 2200) {
-      Serial.print(F("   *** Out of Spec ***"));
-    }
-    Serial.println(F(" "));
-    Serial.print(F("Loops: "));
-    Serial.println(sensordata.Loops);
-    Serial.print(F("Millis: "));
-    Serial.println(sensordata.Millis);
-#ifdef LCD_ENABLED
-    displayTempOnLCD(sensordata.MSP_T);
-    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-    myLCD.showSymbol(LCD_SEG_R, 1);
-    displayBattOnLCD(sensordata.Batt_mV);
-    currentDisplay = ADDRESS_G2;
-    temperatures[ADDRESS_G2 - 2] = sensordata.MSP_T;
-    batteries[ADDRESS_G2 - 2]    = sensordata.Batt_mV;
-#endif
-#ifdef ETHERNET_ENABLED
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 1);
-#endif
-    Serial.println(F("Sending data to AIO..."));
-    if (! Slim_T.publish((int32_t)sensordata.MSP_T)) {
-      Serial.println(F("MSP_T Failed"));
-    }
-    if (! Slim_Batt.publish((uint32_t)sensordata.Batt_mV)) {
-      Serial.println(F("Batt Failed"));
-    }
-    Serial.println(F("Sending data to ThingSpeak..."));
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 1, sensordata.MSP_T);
-    BuildPayload(payload, fieldBuffer, 2, sensordata.Batt_mV);
-    BuildPayload(payload, fieldBuffer, 3, sensordata.Loops);
-    BuildPayload(payload, fieldBuffer, 4, sensordata.Millis);
-    BuildPayload(payload, fieldBuffer, 5, sensordata.Rssi);
-    BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
-    Serial.print(F("Payload: "));
-    Serial.println(payload);
-    if (! Temp_Slim.publish(payload)) {
-      Serial.println(F("Temp_Slim Feed Failed to ThingSpeak."));
-    }
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 0);
-#endif
-#endif
-    lastG2Millis = millis();
   }
 }
 
@@ -786,99 +707,127 @@ void process_sensordata() {
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
     switch (rxPacket.from) {
+      case ADDRESS_G2:
+        if (! Temp_Slim.publish(payload)) {
+          Serial.println(F("Failed to send bad CRC to G2 ThingSpeak"));
+        }
+        break;
       case ADDRESS_SENSOR4:
         if (! Temp_Sensor4.publish(payload)) {
           Serial.println(F("Failed to send bad CRC to  ThingSpeak"));
         }
+        break;
       case ADDRESS_SENSOR5:
         if (! Temp_Sensor5.publish(payload)) {
           Serial.println(F("Failed to send bad CRC to ThingSpeak"));
         }
+        break;
+      default:
+        break;
     }
 #endif
   }
   else {
-    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-    sensordata.Rssi = lastRssi;
-    sensordata.Lqi = lastLqi;
-    Serial.print(F("Received packet from temp sensor: "));
+    Serial.print(F("Received packet from temperature sensor: "));
     Serial.println(rxPacket.from);
     Serial.print(F("Temperature (F): "));
-    Serial.print(sensordata.MSP_T / 10);
+    Serial.print(rxPacket.sensordata.MSP_T / 10);
     Serial.print(F("."));
-    Serial.println(sensordata.MSP_T % 10);
+    Serial.println(rxPacket.sensordata.MSP_T % 10);
     Serial.print(F("Battery V: "));
-    Serial.print(sensordata.Batt_mV / 1000);
+    Serial.print(rxPacket.sensordata.Batt_mV / 1000);
     Serial.print(F("."));
-    Serial.print((sensordata.Batt_mV / 100) % 10);
-    Serial.print((sensordata.Batt_mV / 10) % 10);
-    Serial.print(sensordata.Batt_mV % 10);
-    if (sensordata.Batt_mV < 2200) {
+    Serial.print((rxPacket.sensordata.Batt_mV / 100) % 10);
+    Serial.print((rxPacket.sensordata.Batt_mV / 10) % 10);
+    Serial.print(rxPacket.sensordata.Batt_mV % 10);
+    if (rxPacket.sensordata.Batt_mV < 2200) {
       Serial.print(F("   *** Out of Spec ***"));
     }
     Serial.println(F(" "));
     Serial.print(F("Loops: "));
-    Serial.println(sensordata.Loops);
+    Serial.println(rxPacket.sensordata.Loops);
     Serial.print(F("Millis: "));
-    Serial.println(sensordata.Millis);
+    Serial.println(rxPacket.sensordata.Millis);
 #ifdef LCD_ENABLED
-    displayTempOnLCD(sensordata.MSP_T);
+    displayTempOnLCD(rxPacket.sensordata.MSP_T);
     switch (rxPacket.from) {
+      case ADDRESS_G2:
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        myLCD.showSymbol(LCD_SEG_R, 1);
+        currentDisplay = ADDRESS_G2;
+        temperatures[ADDRESS_G2 - 2] = rxPacket.sensordata.MSP_T;
+        batteries[ADDRESS_G2 - 2]    = rxPacket.sensordata.Batt_mV;
+        break;
       case ADDRESS_SENSOR4:
         myLCD.showSymbol(LCD_SEG_HEART, 1);
         currentDisplay = ADDRESS_SENSOR4;
-        temperatures[ADDRESS_SENSOR4 - 2] = sensordata.MSP_T;
-        batteries[ADDRESS_SENSOR4 - 2]    = sensordata.Batt_mV;
+        temperatures[ADDRESS_SENSOR4 - 2] = rxPacket.sensordata.MSP_T;
+        batteries[ADDRESS_SENSOR4 - 2]    = rxPacket.sensordata.Batt_mV;
         break;
       case ADDRESS_SENSOR5:
         myLCD.showSymbol(LCD_SEG_HEART, 1);
         myLCD.showSymbol(LCD_SEG_R, 1);
         currentDisplay = ADDRESS_SENSOR4;
-        temperatures[ADDRESS_SENSOR5 - 2] = sensordata.MSP_T;
-        batteries[ADDRESS_SENSOR5 - 2]    = sensordata.Batt_mV;
+        temperatures[ADDRESS_SENSOR5 - 2] = rxPacket.sensordata.MSP_T;
+        batteries[ADDRESS_SENSOR5 - 2]    = rxPacket.sensordata.Batt_mV;
         break;
       default:
         break;
     }
-    displayBattOnLCD(sensordata.Batt_mV);
+    displayBattOnLCD(rxPacket.sensordata.Batt_mV);
 #endif
 #ifdef ETHERNET_ENABLED
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
     payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 1, sensordata.MSP_T);
-    BuildPayload(payload, fieldBuffer, 2, sensordata.Batt_mV);
-    BuildPayload(payload, fieldBuffer, 3, sensordata.Loops);
-    BuildPayload(payload, fieldBuffer, 4, sensordata.Millis);
-    BuildPayload(payload, fieldBuffer, 5, sensordata.Rssi);
-    BuildPayload(payload, fieldBuffer, 6, sensordata.Lqi);
+    BuildPayload(payload, fieldBuffer, 1, rxPacket.sensordata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 2, rxPacket.sensordata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 3, rxPacket.sensordata.Loops);
+    BuildPayload(payload, fieldBuffer, 4, rxPacket.sensordata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, lastRssi);
+    BuildPayload(payload, fieldBuffer, 6, lastLqi);
     switch (rxPacket.from) {
+      case ADDRESS_G2:
+        Serial.println(F("Sending data to AIO..."));
+        if (! Slim_T.publish((int32_t)rxPacket.sensordata.MSP_T)) {
+          Serial.println(F("MSP_T Failed"));
+        }
+        if (! Slim_Batt.publish((uint32_t)rxPacket.sensordata.Batt_mV)) {
+          Serial.println(F("Batt Failed"));
+        }
+        Serial.println(F("Sending data to ThingSpeak..."));
+        Serial.print(F("Payload: "));
+        Serial.println(payload);
+        if (! Temp_Slim.publish(payload)) {
+          Serial.println(F("Temp_Slim Channel Failed to ThingSpeak."));
+        }
+        break;
       case ADDRESS_SENSOR4:
         Serial.println(F("Sending data to AIO..."));
-        if (! Sensor4_Temp.publish((int32_t)sensordata.MSP_T)) {
+        if (! Sensor4_Temp.publish((int32_t)rxPacket.sensordata.MSP_T)) {
           Serial.println(F(F("MSP_T Failed")));
         }
-        if (! Sensor4_Batt.publish((uint32_t)sensordata.Batt_mV)) {
+        if (! Sensor4_Batt.publish((uint32_t)rxPacket.sensordata.Batt_mV)) {
           Serial.println(F("Batt Failed"));
         }
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Sensor4.publish(payload)) {
-          Serial.println(F("Temp_Sensor4 Feed Failed to ThingSpeak."));
+          Serial.println(F("Temp_Sensor4 Channel Failed to ThingSpeak."));
         }
         break;
       case ADDRESS_SENSOR5:
         Serial.println(F("Sending data to AIO..."));
-        if (! Sensor5_Temp.publish((int32_t)sensordata.MSP_T)) {
+        if (! Sensor5_Temp.publish((int32_t)rxPacket.sensordata.MSP_T)) {
           Serial.println(F("MSP_T Failed"));
         }
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Sensor5.publish(payload)) {
-          Serial.println(F("Temp_Sensor5 Feed Failed to ThingSpeak."));
+          Serial.println(F("Temp_Sensor5 Channel Failed to ThingSpeak."));
         }
         break;
       default:
@@ -979,12 +928,11 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
       client_aio.stop();
       client_ts.stop();
       digitalWrite(W5200_RESET, LOW);
-      delay(2);
+      delay(5);
       digitalWrite(W5200_RESET, HIGH);
-      delay(155); // Need to delay at least 150 ms after reset
+      delay(200); // Need to delay at least 150 ms after reset
       Serial.println(F("Starting Ethernet..."));
       Ethernet.begin(mac);
-      //  delay(1000);            // Give it a second to initialize
       Serial.println(F("Ethernet enabled."));
     }
   }
@@ -1092,20 +1040,14 @@ void oledDisplay() {
 }
 
 void buildStatusString() {
-  int splen, rssiVal, lqiVal;
+  int splen;
   unsigned long timeSince;
 
   // Make sure the printed values are bounded to fit in the display width
-  rssiVal = weatherdata.Rssi;
-  if (rssiVal < -199) rssiVal = -199;
-  if (rssiVal > 0) rssiVal = 0;
-  lqiVal = weatherdata.Lqi;
-  if (lqiVal < 0) lqiVal = 0;
-  if (lqiVal > 99) lqiVal = 99;
   timeSince = (millis() - lastWeatherMillis) / 1000;
   if (timeSince > 99999) timeSince = 99999;
-  // Print RSSI, LQI values; then # seconds since last message received
-  splen = snprintf((char*)oled_text[WEATHER_ROW], OLED_COLS + 1, "W:%d,%d; %d", rssiVal, lqiVal, timeSince);
+  // Print # seconds since last message received
+  splen = snprintf((char*)oled_text[WEATHER_ROW], OLED_COLS + 1, "Weather: %d", timeSince);
   // Pad the rest of the string with spaces.
   for (int i = splen; i < OLED_COLS; i++) {
     oled_text[WEATHER_ROW][i] = ' ';
@@ -1113,16 +1055,10 @@ void buildStatusString() {
   oled_text[WEATHER_ROW][OLED_COLS] = '\0';
 
   // Make sure the printed values are bounded to fit in the display width
-  rssiVal = sensordata.Rssi;
-  if (rssiVal < -199) rssiVal = -199;
-  if (rssiVal > 0) rssiVal = 0;
-  lqiVal = sensordata.Lqi;
-  if (lqiVal < 0) lqiVal = 0;
-  if (lqiVal > 99) lqiVal = 99;
   timeSince = (millis() - lastG2Millis) / 1000;
   if (timeSince > 99999) timeSince = 99999;
-  // Print RSSI, LQI values; then # seconds since last message received
-  splen = snprintf((char*)oled_text[G2_ROW], OLED_COLS + 1, "S:%d,%d; %d", rssiVal, lqiVal, timeSince);
+  // Print # seconds since last message received
+  splen = snprintf((char*)oled_text[G2_ROW], OLED_COLS + 1, "Slim: %d", timeSince);
   // Pad the rest of the string with spaces.
   for (int i = splen; i < OLED_COLS; i++) {
     oled_text[G2_ROW][i] = ' ';
