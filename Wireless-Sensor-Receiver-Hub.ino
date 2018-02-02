@@ -28,7 +28,10 @@
    2.7 - 01/25/18 - A.T. - Add support for ThingSpeak IoT
                          - Put constant strings in F() macro for better
                            compatiblity for running on Arduino
-   2.8  - 01/30/18 -A.T. - Tickle a pin for external watchdog module.
+   2.8 - 01/30/18 - A.T. - Tickle a pin for external watchdog module.
+   2.9 - 02/01/18 - A.T. - Update message structure to align on word boundary.
+                           Add program FRAM write protection to FR6989
+
 */
 
 /**
@@ -225,10 +228,13 @@ char fieldBuffer[20];  // Temporary buffer to construct a single field of payloa
 
 #define RF_GDO0       19
 
+enum {WEATHER_STRUCT, TEMP_STRUCT};
+
 struct sPacket  // CC110L packet structure
 {
   uint8_t from;           // Local node address that message originated from
-  uint8_t message[59];    // Local node message [MAX. 59 bytes]
+  uint8_t struct_type;    // Flag to indicate type of message structure
+  uint8_t message[58];    // Local node message
 };
 
 // -----------------------------------------------------------------------------
@@ -337,11 +343,11 @@ void setup()
   *MPUCTL0_reg = (unsigned int) 0xa501;
   *MPUSAM_reg  = (unsigned int) 0x7555;
   Serial.print("MPUCTL0: ");
-  Serial.println((unsigned int)*(int*)MPUCTL0_reg, HEX);
+  Serial.println((unsigned int) * (int*)MPUCTL0_reg, HEX);
   Serial.print("MPUSAM: ");
-  Serial.println((unsigned int)*(int*)MPUSAM_reg, HEX);
+  Serial.println((unsigned int) * (int*)MPUSAM_reg, HEX);
 #endif
-  
+
   MarkStatus = 1;
 #ifdef LCD_ENABLED
   myLCD.init();
@@ -371,7 +377,8 @@ void setup()
 #endif
 
   // Setup CC110L data structure
-  rxPacket.from = 0;
+  rxPacket.from = 0;         // "from" and "struct_type" filled in by received message
+  rxPacket.struct_type = 0;  // Zero them out here just for completeness
   memset(rxPacket.message, 0, sizeof(rxPacket.message));
 
   pinMode(BOARD_LED, OUTPUT);       // Use red LED to display message reception
