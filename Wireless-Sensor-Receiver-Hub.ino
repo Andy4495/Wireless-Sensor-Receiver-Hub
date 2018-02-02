@@ -30,6 +30,7 @@
                            compatiblity for running on Arduino
    2.8 - 01/30/18 - A.T. - Tickle a pin for external watchdog module.
                            Add program FRAM write protection to FR6989
+                           Optimize buffer sizes to reduce RAM usage. 
    3.0 - 02/01/18 - A.T. - Update message structure to align on word boundary.
 
 */
@@ -103,7 +104,7 @@
    It can be uncommented to help debug connection issues
 */
 #define OLED_ENABLED
-//#define ETHERNET_ENABLED
+#define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
 #if defined(__MSP430FR4133__)
