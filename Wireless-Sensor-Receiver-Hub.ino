@@ -102,7 +102,7 @@
    It can be uncommented to help debug connection issues
 */
 #define OLED_ENABLED
-#define ETHERNET_ENABLED
+//#define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
 #if defined(__MSP430FR4133__)
@@ -247,11 +247,14 @@ struct TempSensor {
   unsigned long   Millis;
 };
 
+enum {WEATHER_STRUCT, TEMP_STRUCT};
+
 struct sPacket  // CC110L packet structure
 {
   uint8_t from;           // Local node address that message originated from
+  uint8_t struct_type;         // Filler byte to keep rest of struct on word boundary
   union {
-    uint8_t message[59];            // Local node message [MAX. 59 bytes]
+    uint8_t message[58];            // Local node message MAX. 59 bytes, but keep even word boundary with 58
     WeatherData weatherdata;
     TempSensor  sensordata;
   };
@@ -324,6 +327,14 @@ void setup()
   Serial.println(F(" "));
   Serial.println(F("Sensor receiver hub with CC110L."));
   delay(500);
+
+  /// Debug - print size of union
+  Serial.print("Size of rxpacket, weatherdata, sensordata: ");
+  Serial.print(sizeof(rxPacket.message));
+  Serial.print(", ");
+  Serial.print(sizeof(rxPacket.weatherdata));
+  Serial.print(", ");
+  Serial.println(sizeof(rxPacket.sensordata));
 
 #if defined(__MSP430FR6989__)
   // Lock down FRAM - disable writes to program memory
@@ -460,6 +471,18 @@ void loop()
   pinMode(CC110L_CS, OUTPUT);    // Need to pull radio CS high to keep it off the SPI bus
 
   if (packetSize > 0) {
+    /// DEBUG
+    for (int i = 0; i < sizeof(rxPacket.message); i++) {
+      if ((i % 8) == 0) Serial.println(" ");
+      if (rxPacket.message[i] < 16)
+        Serial.print(" 0");
+      else
+        Serial.print(" ");
+      Serial.print(rxPacket.message[i], HEX);
+    }
+    Serial.println(" ");
+
+
     digitalWrite(BOARD_LED, HIGH);
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_RX, 1);
@@ -577,9 +600,9 @@ void process_weatherdata() {
 #endif
   }
   else {
-///    memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
-///    weatherdata.Rssi = lastRssi;
-///    weatherdata.Lqi = lastLqi;
+    ///    memcpy(&weatherdata, &rxPacket.message, sizeof(weatherdata));
+    ///    weatherdata.Rssi = lastRssi;
+    ///    weatherdata.Lqi = lastLqi;
     Serial.println(F("Temperature (F): "));
     Serial.print(F("    BME280:  "));
     Serial.print(rxPacket.weatherdata.BME280_T / 10);
@@ -703,9 +726,9 @@ void process_G2data() {
 #endif
   }
   else {
-//    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-//    sensordata.Rssi = lastRssi;
-//    sensordata.Lqi = lastLqi;
+    //    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+    //    sensordata.Rssi = lastRssi;
+    //    sensordata.Lqi = lastLqi;
     Serial.println(F("Received packet from G2"));
     Serial.print(F("Temperature (F): "));
     Serial.print(rxPacket.sensordata.MSP_T / 10);
@@ -768,6 +791,7 @@ void process_G2data() {
 
 void process_sensordata() {
   if (crcFailed) {
+#ifdef ETHERNET_ENABLED
     // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
     process_failedCRC();
     payload[0] = '\0';
@@ -782,11 +806,26 @@ void process_sensordata() {
           Serial.println(F("Failed to send bad CRC to ThingSpeak"));
         }
     }
+#else
+    Serial.println(F("CRC failed"));
+#endif
   }
   else {
-///    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
-///    sensordata.Rssi = lastRssi;
-///    sensordata.Lqi = lastLqi;
+    ///    memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
+    ///    sensordata.Rssi = lastRssi;
+    ///    sensordata.Lqi = lastLqi;
+    /// Debug -- print out the message buffer
+    Serial.println("Message buffer contents: ");
+    for (int i = 0; i < sizeof(rxPacket.message); i++) {
+      if ((i % 8) == 0) Serial.println(" ");
+      if (rxPacket.message[i] < 16)
+        Serial.print(" 0");
+      else
+        Serial.print(" ");
+      Serial.print(rxPacket.message[i], HEX);
+    }
+    Serial.println(" ");
+
     Serial.print(F("Received packet from temp sensor: "));
     Serial.println(rxPacket.from);
     Serial.print(F("Temperature (F): "));
