@@ -29,8 +29,8 @@
                          - Put constant strings in F() macro for better
                            compatiblity for running on Arduino
    2.8 - 01/30/18 - A.T. - Tickle a pin for external watchdog module.
-   2.9 - 02/01/18 - A.T. - Update message structure to align on word boundary.
                            Add program FRAM write protection to FR6989
+   3.0 - 02/01/18 - A.T. - Update message structure to align on word boundary.
 
 */
 
@@ -103,7 +103,7 @@
    It can be uncommented to help debug connection issues
 */
 #define OLED_ENABLED
-#define ETHERNET_ENABLED
+//#define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 
 #if defined(__MSP430FR4133__)
@@ -779,6 +779,7 @@ void process_G2data() {
 
 void process_sensordata() {
   if (crcFailed) {
+#ifdef ETHERNET_ENABLED
     // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
     process_failedCRC();
     payload[0] = '\0';
@@ -793,6 +794,7 @@ void process_sensordata() {
           Serial.println(F("Failed to send bad CRC to ThingSpeak"));
         }
     }
+#endif
   }
   else {
     memcpy(&sensordata, &rxPacket.message, sizeof(sensordata));
