@@ -35,6 +35,11 @@
    3.1 - 02/02/18 - A.T. - Combine Rx buffer, weather struct, temp struct into
                            union to save RAM and decrease copying of data.
                            Disable OLED by default.
+   3.2 - 03/18/18 - A.T. - Add another temp sensor (ID#6), includes additional
+                           sensor data. Updated temsensor data structure.
+                           New elements added to end of existing structure, so
+                           it is backwards-compatible with existing remote
+                           temp sensors.
 */
 
 /**
@@ -227,7 +232,8 @@ char fieldBuffer[20];  // Temporary buffer to construct a single field of payloa
 #define ADDRESS_G2       0x03
 #define ADDRESS_SENSOR4  0x04
 #define ADDRESS_SENSOR5  0x05
-#define LAST_ADDRESS     0x05
+#define ADDRESS_SENSOR6  0x06
+#define LAST_ADDRESS     0x06
 
 #define RF_GDO0       19
 
@@ -249,6 +255,8 @@ struct TempSensor {
   unsigned int    Batt_mV;   // milliVolts
   unsigned int    Loops;
   unsigned long   Millis;
+  unsigned int    Light_Sensor;
+  unsigned int    Door_Sensor;
 };
 
 // Check "struct_type" member for the type of structure to
@@ -259,7 +267,7 @@ struct sPacket  // CC110L packet structure
 {
   uint8_t from;              // Local node address that message originated from
   uint8_t struct_type;       // Filler byte to keep rest of struct on word boundary
-                             // Also used to indicate type of struct in union
+  // Also used to indicate type of struct in union
   union {
     uint8_t message[58];     // Local node message keep even word boundary
     WeatherData weatherdata;
@@ -496,6 +504,7 @@ void loop()
       case (ADDRESS_G2):
       case (ADDRESS_SENSOR4):
       case (ADDRESS_SENSOR5):
+      case (ADDRESS_SENSOR6):
         process_sensordata();
         break;
       default:
@@ -539,6 +548,10 @@ void loop()
       case ADDRESS_SENSOR5:       // 0x05
         myLCD.showSymbol(LCD_SEG_HEART, 1);
         myLCD.showSymbol(LCD_SEG_R, 1);
+        break;
+      case ADDRESS_SENSOR6:       // 0x06
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
         break;
       default:
         break;
@@ -722,6 +735,11 @@ void process_sensordata() {
           Serial.println(F("Failed to send bad CRC to ThingSpeak"));
         }
         break;
+      case ADDRESS_SENSOR6:
+        if (! Temp_Sensor6.publish(payload)) {
+          Serial.println(F("Failed to send bad CRC to ThingSpeak"));
+        }
+        break;
       default:
         break;
     }
@@ -748,6 +766,12 @@ void process_sensordata() {
     Serial.println(rxPacket.sensordata.Loops);
     Serial.print(F("Millis: "));
     Serial.println(rxPacket.sensordata.Millis);
+    if (rxPacket.from == ADDRESS_SENSOR6) {
+      Serial.print(F("Light: "));
+      Serial.println(rxPacket.sensordata.Light_Sensor);
+      Serial.print(F("Door: "));
+      Serial.println(rxPacket.sensordata.Door_Sensor);
+    }
 #ifdef LCD_ENABLED
     displayTempOnLCD(rxPacket.sensordata.MSP_T);
     switch (rxPacket.from) {
@@ -767,9 +791,16 @@ void process_sensordata() {
       case ADDRESS_SENSOR5:
         myLCD.showSymbol(LCD_SEG_HEART, 1);
         myLCD.showSymbol(LCD_SEG_R, 1);
-        currentDisplay = ADDRESS_SENSOR4;
+        currentDisplay = ADDRESS_SENSOR5;
         temperatures[ADDRESS_SENSOR5 - 2] = rxPacket.sensordata.MSP_T;
         batteries[ADDRESS_SENSOR5 - 2]    = rxPacket.sensordata.Batt_mV;
+        break;
+      case ADDRESS_SENSOR6:
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        currentDisplay = ADDRESS_SENSOR6;
+        temperatures[ADDRESS_SENSOR6 - 2] = rxPacket.sensordata.MSP_T;
+        batteries[ADDRESS_SENSOR6 - 2]    = rxPacket.sensordata.Batt_mV;
         break;
       default:
         break;
@@ -828,6 +859,16 @@ void process_sensordata() {
         Serial.println(payload);
         if (! Temp_Sensor5.publish(payload)) {
           Serial.println(F("Temp_Sensor5 Channel Failed to ThingSpeak."));
+        }
+        break;
+      case ADDRESS_SENSOR6:
+        BuildPayload(payload, fieldBuffer, 7, rxPacket.sensordata.Light_Sensor);
+        BuildPayload(payload, fieldBuffer, 8, rxPacket.sensordata.Door_Sensor);
+        Serial.println(F("Sending data to ThingSpeak..."));
+        Serial.print(F("Payload: "));
+        Serial.println(payload);
+        if (! Temp_Sensor6.publish(payload)) {
+          Serial.println(F("Temp_Sensor6 Channel Failed to ThingSpeak."));
         }
         break;
       default:
