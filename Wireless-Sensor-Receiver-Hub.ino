@@ -40,6 +40,7 @@
                            New elements added to end of existing structure, so
                            it is backwards-compatible with existing remote
                            temp sensors.
+   4.0 - 04/07/18 - A.T. - Change from AIO to Cayenne IOT MQTT server.
 */
 
 /**
@@ -216,11 +217,11 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
      #define AIO_KEY         "MQTT key required for your MQTT server account"
    If using ThingSpeak, then WRITE keys for each channel may also be #defined here.
 */
-EthernetClient client_aio;
+EthernetClient client_cayenne;
 EthernetClient client_ts;
-Adafruit_MQTT_Client aio(&client_aio, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
+Adafruit_MQTT_Client cayenne(&client_cayenne, CAY_SERVER, CAY_SERVERPORT, CAY_USERNAME, CAY_CLIENTID);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
-char payload[110];    // ThingSpeak payload string
+char payload[110];    // MQTT payload string
 char fieldBuffer[20];  // Temporary buffer to construct a single field of payload string
 #endif
 
@@ -310,6 +311,10 @@ int  MarkStatus = 0; // Need this state regardless of LCD, so put outside ifdef
          Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
                                         "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
          See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
+     - Cayenne Channel format:
+     Adafruit_MQTT_Publish Topic = Adafruit_MQTT_Publish(&cayenne,
+                                "v1/" CAY_USERNAME "/things/" CAY_CLIENT_ID "/data/" CAY_CHANNEL_ID);
+       See https://mydevices.com/cayenne/docs/cayenne-mqtt-api/#cayenne-mqtt-api-mqtt-messaging-topics
    The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
    specific to your configuration.
 */
@@ -380,7 +385,9 @@ void setup()
   Serial.println(F("Starting Ethernet..."));
   Ethernet.begin(mac);
   Serial.println(F("Ethernet enabled."));
-  MQTT_connect(&aio, &client_aio);
+  Serial.println("Attempting to connect to Cayenne...");
+  MQTT_connect(&cayenne, &client_cayenne);
+  Serial.println("Attempting to connect to Thingspeak...");
   MQTT_connect(&thingspeak, &client_ts);
 #endif
 
@@ -419,13 +426,13 @@ void loop()
 #ifdef ETHERNET_ENABLED
   // Ensure the connection to the MQTT server is alive (this will make the first
   // connection and automatically reconnect when disconnected).
-  MQTT_connect(&aio, &client_aio);
+  MQTT_connect(&cayenne, &client_cayenne);
   MQTT_connect(&thingspeak, &client_ts);
 #ifdef PRINT_ALL_CLIENT_STATUS
   Serial.print(F("Ethernet Maintain status: "));
   Serial.println(Ethernet.maintain());
 #endif
-  printClientStatus(&client_aio);
+  printClientStatus(&client_cayenne);
   printClientStatus(&client_ts);
 #endif
 
@@ -568,9 +575,9 @@ void loop()
 
 #ifdef ETHERNET_ENABLED
   // ping the server to keep the mqtt connection alive
-  if (! aio.ping()) {
-    aio.disconnect();
-    Serial.println(F("AIO MQTT ping failed, disconnecting."));
+  if (! cayenne.ping()) {
+    cayenne.disconnect();
+    Serial.println(F("Cayenne MQTT ping failed, disconnecting."));
     MarkStatus = 1;
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
@@ -634,7 +641,7 @@ void process_weatherdata() {
     Serial.print((rxPacket.weatherdata.Batt_mV / 100) % 10);
     Serial.print((rxPacket.weatherdata.Batt_mV / 10) % 10);
     Serial.print(rxPacket.weatherdata.Batt_mV % 10);
-    if (rxPacket.weatherdata.Batt_mV < 2200) {
+    if (rxPacket.weatherdata.Batt_mV < 2400) {
       Serial.print(F("   *** Out of Spec ***"));
     }
     Serial.println(F(" "));
@@ -656,20 +663,30 @@ void process_weatherdata() {
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 1);
 #endif
-    Serial.println(F("Sending data to AIO..."));
-    if (! Weather_T_SHT21.publish((int32_t)rxPacket.weatherdata.BME280_T)) {
-      Serial.println(F("BME280_T Failed"));
+    Serial.println(F("Sending data to Cayenne..."));
+    payload[0] = '\0';
+    sprintf(payload, "=%d.%d", rxPacket.weatherdata.TMP107_Ti/10, rxPacket.weatherdata.TMP107_Ti%10);
+    if (! Weather_TMP007I.publish(payload)) {
+      Serial.println(F("TMP107_Ti Failed"));
     }
-    if (! Weather_P.publish((uint32_t)rxPacket.weatherdata.BME280_P)) {
+    payload[0] = '\0';
+    sprintf(payload, "bp,hpa=%d", rxPacket.weatherdata.BME280_P);
+    if (! Weather_BME280P.publish(payload)) {
       Serial.println(F("BME280_P Failed"));
     }
-    if (! Weather_RH.publish((uint32_t)rxPacket.weatherdata.BME280_H)) {
+    payload[0] = '\0';
+    sprintf(payload, "rel_hum,p=%d.%d", rxPacket.weatherdata.BME280_H/10, rxPacket.weatherdata.BME280_H%10);
+    if (! Weather_BME280H.publish(payload)) {
       Serial.println(F("RH Failed"));
     }
-    if (! Weather_LUX.publish((uint32_t)rxPacket.weatherdata.LUX)) {
+    payload[0] = '\0';
+    sprintf(payload, "lum,lux=%d", rxPacket.weatherdata.LUX);
+    if (! Weather_LUX.publish(payload)) {
       Serial.println(F("LUX Failed"));
     }
-    if (! Weather_Batt.publish((uint32_t)rxPacket.weatherdata.Batt_mV)) {
+    payload[0] = '\0';
+    sprintf(payload, "voltage,mv=%d", rxPacket.weatherdata.Batt_mV);
+    if (! Weather_BATT.publish(payload)) {
       Serial.println(F("Batt Failed"));
     }
 
@@ -688,18 +705,21 @@ void process_weatherdata() {
     if (! Weather_Channel.publish(payload)) {
       Serial.println(F("Weather_Channel Feed Failed to ThingSpeak."));
     }
-    Serial.println(F("Sending data to ThingSpeak Weather-Meta..."));
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 1, lastRssi);
-    BuildPayload(payload, fieldBuffer, 2, lastLqi);
-    BuildPayload(payload, fieldBuffer, 3, rxPacket.weatherdata.Loops);
-    BuildPayload(payload, fieldBuffer, 4, rxPacket.weatherdata.Millis);
-    BuildPayload(payload, fieldBuffer, 5, rxPacket.weatherdata.MSP_T);
-    BuildPayload(payload, fieldBuffer, 6, rxPacket.weatherdata.Batt_mV);
-    Serial.print(F("Payload: "));
-    Serial.println(payload);
-    if (! Weather_Meta.publish(payload)) {
-      Serial.println(F("Weather_Meta Feed Failed to ThingSpeak."));
+    Serial.println(F("Checking RSSI and LQI..."));
+    if ((lastRssi < -95) | (lastLqi > 5)) {
+      payload[0] = '\0';
+      BuildPayload(payload, fieldBuffer, 12, "Weak signal from: ");
+      sprintf(fieldBuffer, "%d", rxPacket.from);
+      strcat(payload, fieldBuffer);
+      strcat(payload, ", RSSI: ");
+      sprintf(fieldBuffer, "%d", lastRssi);
+      strcat(payload, fieldBuffer);
+      strcat(payload, ", LQI: ");
+      sprintf(fieldBuffer, "%d", lastLqi);
+      strcat(payload, fieldBuffer);
+      if (! Weather_Channel.publish(payload)) {
+        Serial.println(F("Failed to send weak signal message to ThingSpeak"));
+      }
     }
 
 #ifdef LCD_ENABLED
@@ -820,28 +840,25 @@ void process_sensordata() {
     BuildPayload(payload, fieldBuffer, 6, lastLqi);
     switch (rxPacket.from) {
       case ADDRESS_G2:
-        Serial.println(F("Sending data to AIO..."));
-        if (! Slim_T.publish((int32_t)rxPacket.sensordata.MSP_T)) {
-          Serial.println(F("MSP_T Failed"));
-        }
-        if (! Slim_Batt.publish((uint32_t)rxPacket.sensordata.Batt_mV)) {
-          Serial.println(F("Batt Failed"));
-        }
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Slim.publish(payload)) {
           Serial.println(F("Temp_Slim Channel Failed to ThingSpeak."));
         }
-        break;
-      case ADDRESS_SENSOR4:
-        Serial.println(F("Sending data to AIO..."));
-        if (! Sensor4_Temp.publish((int32_t)rxPacket.sensordata.MSP_T)) {
-          Serial.println(F(F("MSP_T Failed")));
+        Serial.println(F("Sending data to Cayenne..."));
+        payload[0] = '\0';
+        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T/10, rxPacket.sensordata.MSP_T%10);
+        if (! Slim_T.publish(payload)) {
+          Serial.println(F("MSP_T Failed"));
         }
-        if (! Sensor4_Batt.publish((uint32_t)rxPacket.sensordata.Batt_mV)) {
+        payload[0] = '\0';
+        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
+        if (! Slim_BATT.publish(payload)) {
           Serial.println(F("Batt Failed"));
         }
+        break;
+      case ADDRESS_SENSOR4:
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
         Serial.println(payload);
@@ -850,15 +867,22 @@ void process_sensordata() {
         }
         break;
       case ADDRESS_SENSOR5:
-        Serial.println(F("Sending data to AIO..."));
-        if (! Sensor5_Temp.publish((int32_t)rxPacket.sensordata.MSP_T)) {
-          Serial.println(F("MSP_T Failed"));
-        }
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
         Serial.println(payload);
         if (! Temp_Sensor5.publish(payload)) {
           Serial.println(F("Temp_Sensor5 Channel Failed to ThingSpeak."));
+        }
+        Serial.println(F("Sending data to Cayenne..."));
+        payload[0] = '\0';
+        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T/10, rxPacket.sensordata.MSP_T%10);
+        if (! Indoor_T.publish(payload)) {
+          Serial.println(F("MSP_T Failed"));
+        }
+        payload[0] = '\0';
+        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
+        if (! Indoor_BATT.publish(payload)) {
+          Serial.println(F("Batt Failed"));
         }
         break;
       case ADDRESS_SENSOR6:
@@ -869,6 +893,22 @@ void process_sensordata() {
         Serial.println(payload);
         if (! Temp_Sensor6.publish(payload)) {
           Serial.println(F("Temp_Sensor6 Channel Failed to ThingSpeak."));
+        }
+        Serial.println(F("Sending data to Cayenne..."));
+        payload[0] = '\0';
+        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T/10, rxPacket.sensordata.MSP_T%10);
+        if (! Garage_T.publish(payload)) {
+          Serial.println(F("MSP_T Failed"));
+        }
+        payload[0] = '\0';
+        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
+        if (! Garage_BATT.publish(payload)) {
+          Serial.println(F("Batt Failed"));
+        }
+        payload[0] = '\0';
+        sprintf(payload, "analog_sensor=%d", rxPacket.sensordata.Door_Sensor);
+        if (! Garage_DOOR.publish(payload)) {
+          Serial.println(F("Door Failed"));
         }
         break;
       default:
@@ -966,7 +1006,7 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
       oled.command(0x08);
       displayTimeoutCount = 0;
 #endif
-      client_aio.stop();
+      client_cayenne.stop();
       client_ts.stop();
       digitalWrite(W5200_RESET, LOW);
       delay(5);
