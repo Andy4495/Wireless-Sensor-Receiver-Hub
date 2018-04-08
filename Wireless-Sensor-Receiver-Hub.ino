@@ -1,5 +1,7 @@
 /**
    Sensor Receiver Station
+   https://gitlab.com/Andy4495/Sensor-Receiver
+
    1.0 - 11/19/17 - A.T. - Original
    1.1 - 11/19/17 - A.T. - Display info on built-in LCD
    1.2 - 11/20/17 - A.T. - Press PUSH1 to cycle LCD display
@@ -1000,7 +1002,7 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
     Serial.print(F("Ethernet connection lost #: "));
     Serial.println(lostConnectionCount);
     if (lostConnectionCount > 5) {
-      
+
       Serial.print(F("Ethernet connection loss over max: "));
       Serial.println(lostConnectionCount);
       lostConnectionCount = 0;
