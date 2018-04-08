@@ -219,7 +219,7 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 */
 EthernetClient client_cayenne;
 EthernetClient client_ts;
-Adafruit_MQTT_Client cayenne(&client_cayenne, CAY_SERVER, CAY_SERVERPORT, CAY_USERNAME, CAY_CLIENTID);
+Adafruit_MQTT_Client cayenne(&client_cayenne, CAY_SERVER, CAY_SERVERPORT, CAY_CLIENTID, CAY_USERNAME, CAY_PASSWORD);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
 char payload[110];    // MQTT payload string
 char fieldBuffer[20];  // Temporary buffer to construct a single field of payload string
@@ -665,7 +665,7 @@ void process_weatherdata() {
 #endif
     Serial.println(F("Sending data to Cayenne..."));
     payload[0] = '\0';
-    sprintf(payload, "=%d.%d", rxPacket.weatherdata.TMP107_Ti/10, rxPacket.weatherdata.TMP107_Ti%10);
+    sprintf(payload, "temp,f=%d.%d", rxPacket.weatherdata.TMP107_Ti/10, rxPacket.weatherdata.TMP107_Ti%10);
     if (! Weather_TMP007I.publish(payload)) {
       Serial.println(F("TMP107_Ti Failed"));
     }
@@ -998,6 +998,7 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
     Serial.print(F("Ethernet connection lost #: "));
     Serial.println(lostConnectionCount);
     if (lostConnectionCount > 5) {
+      
       Serial.print(F("Ethernet connection loss over max: "));
       Serial.println(lostConnectionCount);
       lostConnectionCount = 0;
