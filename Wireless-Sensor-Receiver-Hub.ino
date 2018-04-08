@@ -41,6 +41,8 @@
                            it is backwards-compatible with existing remote
                            temp sensors.
    4.0 - 04/07/18 - A.T. - Change from AIO to Cayenne IOT MQTT server.
+   4.1 - 04/08/18 - A.T. - Cayenne fixes: LUX data type, door sensor changed to digital
+                           Send RX HUB uptime on Garage channel 7
 */
 
 /**
@@ -651,11 +653,11 @@ void process_weatherdata() {
     Serial.println(rxPacket.weatherdata.Millis);
 
 #ifdef LCD_ENABLED
-    displayTempOnLCD(rxPacket.weatherdata.BME280_T);
+    displayTempOnLCD(rxPacket.weatherdata.TMP107_Ti);
     myLCD.showSymbol(LCD_SEG_CLOCK, 1);
     displayBattOnLCD(rxPacket.weatherdata.Batt_mV);
     currentDisplay = ADDRESS_WEATHER;
-    temperatures[ADDRESS_WEATHER - 2] = rxPacket.weatherdata.BME280_T;
+    temperatures[ADDRESS_WEATHER - 2] = rxPacket.weatherdata.TMP107_Ti;
     batteries[ADDRESS_WEATHER - 2]    = rxPacket.weatherdata.Batt_mV;
 #endif
 
@@ -680,7 +682,7 @@ void process_weatherdata() {
       Serial.println(F("RH Failed"));
     }
     payload[0] = '\0';
-    sprintf(payload, "lum,lux=%d", rxPacket.weatherdata.LUX);
+    sprintf(payload, "lum,lux=%lu", rxPacket.weatherdata.LUX);
     if (! Weather_LUX.publish(payload)) {
       Serial.println(F("LUX Failed"));
     }
@@ -886,7 +888,7 @@ void process_sensordata() {
         }
         break;
       case ADDRESS_SENSOR6:
-        BuildPayload(payload, fieldBuffer, 7, rxPacket.sensordata.Light_Sensor);
+        BuildPayload(payload, fieldBuffer, 7, millis()/1000/60);                 // Send RX hub uptime in minutes
         BuildPayload(payload, fieldBuffer, 8, rxPacket.sensordata.Door_Sensor);
         Serial.println(F("Sending data to ThingSpeak..."));
         Serial.print(F("Payload: "));
@@ -906,8 +908,8 @@ void process_sensordata() {
           Serial.println(F("Batt Failed"));
         }
         payload[0] = '\0';
-        sprintf(payload, "analog_sensor=%d", rxPacket.sensordata.Door_Sensor);
-        if (! Garage_DOOR.publish(payload)) {
+        sprintf(payload, "digital_sensor,d=%d", (rxPacket.sensordata.Door_Sensor > 45) ? 1 : 0);
+        if (! Garage_DOOR_digital.publish(payload)) {
           Serial.println(F("Door Failed"));
         }
         break;
