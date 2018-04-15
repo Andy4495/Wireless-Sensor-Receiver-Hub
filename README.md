@@ -30,7 +30,8 @@ The details on the contents of these files are in the .ino file comments.
 ## External Libraries ##
 * [Adafruit_MQTT](https://github.com/adafruit/Adafruit_MQTT_Library)  
   *See the [Adafruit_MQTT][8] readme file for changes necessary to support long `connect` messages, which are generated when using the [Cayenne][9] platform.*
-* WIZnet Ethernet library, [modified to work with Energia](./Ethernet.md)
+* [WIZnet Ethernet](https://github.com/Wiznet/WIZ_Ethernet_Library)  
+  *[Modifications](./Ethernet.md) are required to work with Energia and fix a memory leak.*
 * [NewhavenOLED](https://gitlab.com/Andy4495/NewhavenOLED)  
   _The NewhavenOLED library is only needed if you plan to use an external OLED
   display as mentioned above._

@@ -7,6 +7,8 @@ project uses a W5200 ethernet chip from WIZnet.
 The WIZnet-provided Arduino library for the W5200 chip requires some changes
 to work with Energia and MSP430 controllers.
 
+Additional changes are also required to fix a memory leak in sketches where Ethernet.begin() is run more than once.
+
 ### Installing WIZnet Ethernet Library for Energia ###
 
 1. Download ZIP from GitHub: https://github.com/Wiznet/WIZ_Ethernet_Library
@@ -46,6 +48,35 @@ to work with Energia and MSP430 controllers.
                   `SPI.setClockDivider(SPI_CLOCK_DIV8);`
           * In the second-to-last line of the file (right before the final #endif), add the following  
                   `#undef ARDUINO_ARCH_AVR`
+
+### Fixing the Memory Leak ###
+
+The `Ethernet.begin()` method creates a new `DhcpClass` object every time it is run, without first checking if a `DchpClass` object already exists. This causes a memory leak in sketches where `Ethernet.begin()` is called more than once, since the previous `DhcpClass` object still exists but is no longer used (or reachable).
+
+To fix this, edit the following files:
+##### Ethernet.h
+Add a constructor prototype in the public section:  
+
+    EthernetClass();
+
+##### Ethernet.cpp
+Define the constructor, which initializes the `_dhcp` pointer to zero:
+
+    EthernetClass::EthernetClass() {
+      _dhcp = 0;
+    }
+
+In the two places where a new `DhcpClass` object is created, replace this:
+
+    _dhcp = new DhcpClass();
+
+with this (to check if an object was already created):
+
+    if (_dhcp == 0) {
+      _dhcp = new DhcpClass();
+    }
+
+Additional checks can be added to make sure that `_dhcp` is non-null before using the pointer. 
 
 ### Notes on the library ###
 
