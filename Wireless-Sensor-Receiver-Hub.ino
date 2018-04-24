@@ -49,6 +49,7 @@
                            - Note that debug/error modes also need to be disabled in Adafruit_MQTT.h
                              to fully disable serial
                            Replace sprintf with snprintf when using fieldBuffer
+   4.3 - 04/24/18 - A.T. - Send Rx Hub Ethernet uptime on Garage channel 3 to ThingSpeak (replacing loops).
 */
 
 /**
@@ -309,6 +310,7 @@ int lostConnectionCount = 0;
 int lastRssi, lastLqi;
 int crcFailed = 0; // 1 is bad CRC, 0 is good CRC
 int WD_state = 0;
+unsigned long lastEthernetReset = 0;
 #ifdef OLED_ENABLED
 unsigned long lastG2Millis, lastWeatherMillis;
 #endif
@@ -360,6 +362,7 @@ void setup()
   digitalWrite(W5200_RESET, LOW); // Reset W5200
   delay(5);           // Needs to be low at least 2 us; we'll go a little longer
   digitalWrite(W5200_RESET, HIGH);
+  lastEthernetReset = millis();
   delay(200);         // RESET needs to be cleared for at least 150 ms before operating
 
   // Set up the watchdog pin
@@ -858,7 +861,10 @@ void process_sensordata() {
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, rxPacket.sensordata.MSP_T);
     BuildPayload(payload, fieldBuffer, 2, rxPacket.sensordata.Batt_mV);
-    BuildPayload(payload, fieldBuffer, 3, rxPacket.sensordata.Loops);
+    if (rxPacket.from == ADDRESS_SENSOR6) // Send ethernet card uptime instead of loops for sensor6
+      BuildPayload(payload, fieldBuffer, 3, (millis() - lastEthernetReset) / 1000 / 60);
+    else
+      BuildPayload(payload, fieldBuffer, 3, rxPacket.sensordata.Loops);
     BuildPayload(payload, fieldBuffer, 4, rxPacket.sensordata.Millis);
     BuildPayload(payload, fieldBuffer, 5, lastRssi);
     BuildPayload(payload, fieldBuffer, 6, lastLqi);
@@ -1036,6 +1042,7 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
       digitalWrite(W5200_RESET, LOW);
       delay(5);
       digitalWrite(W5200_RESET, HIGH);
+      lastEthernetReset = millis();
       delay(200); // Need to delay at least 150 ms after reset
       SKETCH_PRINTLN(F("Starting Ethernet..."));
       Ethernet.begin(mac);
