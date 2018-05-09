@@ -33,7 +33,9 @@ Below are instructions for fixing the problem for the connect message. Similar u
           len = len + 3;
         }
 3. Because the Cayenne API creates longer messages, you may also want to increase the packet buffer size. Note that this causes the library to use more RAM. The buffer size is defined in `Adafruit_MQTT.h`:   
-        #define MAXBUFFERSIZE 150  
+
+    #define MAXBUFFERSIZE 150  
+
 In my implementation, I changed the default value of 150 to 200.
 
 ### References ###
