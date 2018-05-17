@@ -23,7 +23,7 @@ Hardware
 ### SeeedStudio W5200 Ethernet Shield ###
 + WIZnet W5200 Embedded Ethernet Controller
 + MicroSD Card Slot
-+ [Technical Info](http://wiki.seeedstudio.com/wiki/Ethernet_Shield_V2.0)
++ [Product Page](http://wiki.seeedstudio.com/Ethernet_Shield_V2.0/), including links to technical info
 + This board is designed to interface with Arduino controllers with 5V power and requires hardware modifications and an interface board (see "Custom Shield-LaunchPad Interface Board" below) to route signals to an MSP430 LaunchPad.
 
 #### Ethernet Shield Hardware Modifications ####
