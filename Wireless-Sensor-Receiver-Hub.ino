@@ -50,6 +50,8 @@
                              to fully disable serial
                            Replace sprintf with snprintf when using fieldBuffer
    4.3 - 04/24/18 - A.T. - Send Rx Hub Ethernet uptime on Garage channel 3 to ThingSpeak (replacing loops).
+   4.4 - 08/21/18 - A.T. - Stop sending status field without any other fields, since that causes nulls to be sent when queried.
+                           Now keep track of cumulative CRC errors and send as part of status field on every message. 
 */
 
 /**
@@ -179,6 +181,7 @@
 #define W5200_RESET 5
 #define W5200_CS    8
 #define CC110L_CS  18
+#define RF_GDO0    19
 #define WD_PIN     12             // Toggle for external watchdog
 
 /* OLED PIN AND HARDWARE DEFINITIONS
@@ -243,7 +246,8 @@ EthernetClient client_cayenne;
 EthernetClient client_ts;
 Adafruit_MQTT_Client cayenne(&client_cayenne, CAY_SERVER, CAY_SERVERPORT, CAY_CLIENTID, CAY_USERNAME, CAY_PASSWORD);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
-char payload[110];    // MQTT payload string
+#define PAYLOADSIZE 132
+char payload[PAYLOADSIZE];    // MQTT payload string
 #define FIELDBUFFERSIZE 20
 char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single field of payload string
 #endif
@@ -259,7 +263,7 @@ char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single fi
 #define ADDRESS_SENSOR6  0x06
 #define LAST_ADDRESS     0x06
 
-#define RF_GDO0       19
+unsigned int CRC_count[LAST_ADDRESS];
 
 struct WeatherData {
   int             BME280_T;  // Tenth degrees F
@@ -446,6 +450,8 @@ void setup()
   myLCD.showSymbol(LCD_SEG_RADIO, RadioStatus);
   SKETCH_PRINTLN(F("Waiting for first Rx message. "));
 #endif
+
+  for (int i = 0; i < LAST_ADDRESS; i++) CRC_count[i] = 0; // Clear the counter
 }
 
 void loop()
@@ -623,15 +629,10 @@ void loop()
 
 void process_weatherdata() {
   if (crcFailed) {
-#ifdef ETHERNET_ENABLED
-    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
-    process_failedCRC();
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
-    if (! Weather_Channel.publish(payload)) {
-      SKETCH_PRINTLN(F("Failed to send bad CRC to Weather_Channel ThingSpeak"));
-    }
-#endif
+    // If CRC failed, increase the counter, but don't send a message.
+    CRC_count[rxPacket.from - 1]++;
+    //    payload[0] = '\0';
+    //    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
   }
   else {
     SKETCH_PRINTLN(F("Temperature (F): "));
@@ -727,6 +728,9 @@ void process_weatherdata() {
     BuildPayload(payload, fieldBuffer, 6, rxPacket.weatherdata.BME280_P);
     BuildPayload(payload, fieldBuffer, 7, rxPacket.weatherdata.LUX);
     BuildPayload(payload, fieldBuffer, 8, rxPacket.weatherdata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    strcat(payload, fieldBuffer);
     SKETCH_PRINT(F("Payload: "));
     SKETCH_PRINTLN(payload);
     if (! Weather_Channel.publish(payload)) {
@@ -735,6 +739,9 @@ void process_weatherdata() {
     SKETCH_PRINTLN(F("Checking RSSI and LQI..."));
     if ((lastRssi < -95) | (lastLqi > 5)) {
       payload[0] = '\0';
+      BuildPayload(payload, fieldBuffer, 1, lastRssi);
+      BuildPayload(payload, fieldBuffer, 2, lastLqi);
+      BuildPayload(payload, fieldBuffer, 3, rxPacket.from);
       BuildPayload(payload, fieldBuffer, 12, "Weak signal from: ");
       snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", rxPacket.from);
       strcat(payload, fieldBuffer);
@@ -744,53 +751,25 @@ void process_weatherdata() {
       strcat(payload, ", LQI: ");
       snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", lastLqi);
       strcat(payload, fieldBuffer);
-      if (! Weather_Channel.publish(payload)) {
-        SKETCH_PRINTLN(F("Failed to send weak signal message to ThingSpeak"));
+      if (! Sensor_Errors.publish(payload)) {
+        SKETCH_PRINTLN(F("Failed to send weak signal to ThingSpeak"));
       }
     }
 
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
-#endif
+#endif  // #ifdef ETHERNET_ENABLED
 #ifdef OLED_ENABLED
     lastWeatherMillis = millis();
 #endif
   }
-}
+} // process_weatherdata()
 
 void process_sensordata() {
   if (crcFailed) {
-#ifdef ETHERNET_ENABLED
-    // If CRC was bad, then send status message to ThingSpeak, along with RSSI and LQI
-    process_failedCRC();
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
-    switch (rxPacket.from) {
-      case ADDRESS_G2:
-        if (! Temp_Slim.publish(payload)) {
-          SKETCH_PRINTLN(F("Failed to send bad CRC to G2 ThingSpeak"));
-        }
-        break;
-      case ADDRESS_SENSOR4:
-        if (! Temp_Sensor4.publish(payload)) {
-          SKETCH_PRINTLN(F("Failed to send bad CRC to  ThingSpeak"));
-        }
-        break;
-      case ADDRESS_SENSOR5:
-        if (! Temp_Sensor5.publish(payload)) {
-          SKETCH_PRINTLN(F("Failed to send bad CRC to ThingSpeak"));
-        }
-        break;
-      case ADDRESS_SENSOR6:
-        if (! Temp_Sensor6.publish(payload)) {
-          SKETCH_PRINTLN(F("Failed to send bad CRC to ThingSpeak"));
-        }
-        break;
-      default:
-        break;
-    }
-#endif
+    // If CRC failed, increase the counter, but don't send a message.
+    CRC_count[rxPacket.from - 1]++;
   }
   else {
     SKETCH_PRINT(F("Received packet from temperature sensor: "));
@@ -868,6 +847,9 @@ void process_sensordata() {
     BuildPayload(payload, fieldBuffer, 4, rxPacket.sensordata.Millis);
     BuildPayload(payload, fieldBuffer, 5, lastRssi);
     BuildPayload(payload, fieldBuffer, 6, lastLqi);
+    BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    strcat(payload, fieldBuffer);
     switch (rxPacket.from) {
       case ADDRESS_G2:
         SKETCH_PRINTLN(F("Sending data to ThingSpeak..."));
@@ -947,9 +929,9 @@ void process_sensordata() {
 #ifdef LCD_ENABLED
     myLCD.showSymbol(LCD_SEG_TX, 0);
 #endif
-#endif
+#endif // #ifdef ETHERNET_ENABLED
   }
-}
+} // process_sensordata()
 
 #ifdef LCD_ENABLED
 void displayTempOnLCD(int temp) {
@@ -1177,27 +1159,6 @@ void buildStatusString() {
     oled_text[G2_ROW][i] = ' ';
   }
   oled_text[G2_ROW][OLED_COLS] = '\0';
-}
-#endif
-
-#ifdef ETHERNET_ENABLED
-void process_failedCRC() {
-  payload[0] = '\0';
-  BuildPayload(payload, fieldBuffer, 1, lastRssi);
-  BuildPayload(payload, fieldBuffer, 2, lastLqi);
-  BuildPayload(payload, fieldBuffer, 3, rxPacket.from);
-  BuildPayload(payload, fieldBuffer, 12, "CRC failed from: ");
-  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", rxPacket.from);
-  strcat(payload, fieldBuffer);
-  strcat(payload, ", RSSI: ");
-  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", lastRssi);
-  strcat(payload, fieldBuffer);
-  strcat(payload, ", LQI: ");
-  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", lastLqi);
-  strcat(payload, fieldBuffer);
-  if (! Sensor_Errors.publish(payload)) {
-    SKETCH_PRINTLN(F("Failed to send bad CRC to ThingSpeak"));
-  }
 }
 #endif
 
