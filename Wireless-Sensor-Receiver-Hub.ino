@@ -51,7 +51,8 @@
                            Replace sprintf with snprintf when using fieldBuffer
    4.3 - 04/24/18 - A.T. - Send Rx Hub Ethernet uptime on Garage channel 3 to ThingSpeak (replacing loops).
    4.4 - 08/21/18 - A.T. - Stop sending status field without any other fields, since that causes nulls to be sent when queried.
-                           Now keep track of cumulative CRC errors and send as part of status field on every message. 
+                           Now keep track of cumulative CRC errors and send as part of status field on every message.
+                           Continue sending CRC error messages to Sensor_Errors feed, just not the data feed. 
 */
 
 /**
@@ -631,8 +632,9 @@ void process_weatherdata() {
   if (crcFailed) {
     // If CRC failed, increase the counter, but don't send a message.
     CRC_count[rxPacket.from - 1]++;
-    //    payload[0] = '\0';
-    //    BuildPayload(payload, fieldBuffer, 12, "CRC Failed!");
+#ifdef ETHERNET_ENABLED
+    process_failedCRC();
+#endif
   }
   else {
     SKETCH_PRINTLN(F("Temperature (F): "));
@@ -770,6 +772,9 @@ void process_sensordata() {
   if (crcFailed) {
     // If CRC failed, increase the counter, but don't send a message.
     CRC_count[rxPacket.from - 1]++;
+#ifdef ETHERNET_ENABLED
+    process_failedCRC();
+#endif
   }
   else {
     SKETCH_PRINT(F("Received packet from temperature sensor: "));
@@ -980,7 +985,7 @@ void displayBattOnLCD(int mV) {
 // Function to connect and reconnect as necessary to the MQTT server.
 // Should be called in the loop function and it will take care of connecting.
 #ifdef ETHERNET_ENABLED
-void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
+void MQTT_connect(Adafruit_MQTT_Client * mqtt_server, EthernetClient * client ) {
   int8_t ret;
 
   // Return if already connected.
@@ -1051,7 +1056,7 @@ void MQTT_connect(Adafruit_MQTT_Client* mqtt_server, EthernetClient* client ) {
 #endif
 
 #ifdef ETHERNET_ENABLED
-int printClientStatus(EthernetClient* client) {
+int printClientStatus(EthernetClient * client) {
   int ClientStatus;
   ClientStatus = client->status();
   if (ClientStatus != 0x17) {
@@ -1159,6 +1164,27 @@ void buildStatusString() {
     oled_text[G2_ROW][i] = ' ';
   }
   oled_text[G2_ROW][OLED_COLS] = '\0';
+}
+#endif
+
+#ifdef ETHERNET_ENABLED
+void process_failedCRC() {
+  payload[0] = '\0';
+  BuildPayload(payload, fieldBuffer, 1, lastRssi);
+  BuildPayload(payload, fieldBuffer, 2, lastLqi);
+  BuildPayload(payload, fieldBuffer, 3, rxPacket.from);
+  BuildPayload(payload, fieldBuffer, 12, "CRC failed from: ");
+  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", rxPacket.from);
+  strcat(payload, fieldBuffer);
+  strcat(payload, ", RSSI: ");
+  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", lastRssi);
+  strcat(payload, fieldBuffer);
+  strcat(payload, ", LQI: ");
+  snprintf(fieldBuffer, FIELDBUFFERSIZE, "%d", lastLqi);
+  strcat(payload, fieldBuffer);
+  if (! Sensor_Errors.publish(payload)) {
+    SKETCH_PRINTLN(F("Failed to send bad CRC to ThingSpeak"));
+  }
 }
 #endif
 
