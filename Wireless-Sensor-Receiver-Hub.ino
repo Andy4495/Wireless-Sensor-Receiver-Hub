@@ -52,7 +52,10 @@
    4.3 - 04/24/18 - A.T. - Send Rx Hub Ethernet uptime on Garage channel 3 to ThingSpeak (replacing loops).
    4.4 - 08/21/18 - A.T. - Stop sending status field without any other fields, since that causes nulls to be sent when queried.
                            Now keep track of cumulative CRC errors and send as part of status field on every message.
-                           Continue sending CRC error messages to Sensor_Errors feed, just not the data feed. 
+                           Continue sending CRC error messages to Sensor_Errors feed, just not the data feed.
+   4.5 - 09/09/18 - A.T. - Add support from pond sensor (received from the repeater).
+                           Initially uses same RX ID as weather sensor; will be changed to its own ID in future.
+   4.6 - 10/07/18 - A.T. - Add support for battery temperature on pond sensor. 
 */
 
 /**
@@ -257,12 +260,13 @@ char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single fi
 
 
 #define ADDRESS_LOCAL    0x01
-#define ADDRESS_WEATHER  0x02
+#define ADDRESS_WEATHER  0x02              /// Also used by the pond sensor temporarily
 #define ADDRESS_G2       0x03
 #define ADDRESS_SENSOR4  0x04
 #define ADDRESS_SENSOR5  0x05
 #define ADDRESS_SENSOR6  0x06
-#define LAST_ADDRESS     0x06
+#define ADDRESS_SENSOR7  0x07
+#define LAST_ADDRESS     0x07
 
 unsigned int CRC_count[LAST_ADDRESS];
 
@@ -288,9 +292,19 @@ struct TempSensor {
   unsigned int    Door_Sensor;
 };
 
+struct PondData {
+  int             MSP_T;          // Tenth degrees F
+  int             SUBMERGED_T;    // Tenth degrees F
+  unsigned int    Batt_mV;        // milliVolts
+  int             PUMP_STATUS;    // Unimplemented
+  int             AERATOR_STATUS; // Unimplemented
+  unsigned long   Millis;
+  int             Battery_T;      // Tenth degrees F; only meaningful when using a Fuel Tank BoosterPack
+};
+
 // Check "struct_type" member for the type of structure to
 // decode in the sPacket union.
-enum {WEATHER_STRUCT, TEMP_STRUCT};
+enum {WEATHER_STRUCT, TEMP_STRUCT, POND_STRUCT};
 
 struct sPacket  // CC110L packet structure
 {
@@ -301,6 +315,7 @@ struct sPacket  // CC110L packet structure
     uint8_t message[58];     // Local node message keep even word boundary
     WeatherData weatherdata;
     TempSensor  sensordata;
+    PondData    ponddata;
   };
 };
 
@@ -510,7 +525,7 @@ void loop()
   // The receiverOn() method returns the number of bytes copied to rxData.
   // The radio library uses the SPI library internally, this call initializes
   // SPI/CSn and GDO0 lines. Also setup initial address, channel, and TX power.
-  SPI.begin(CC110L_CS);
+  SPI.begin();
   Radio.begin(ADDRESS_LOCAL, CHANNEL_1, POWER_MAX);
   packetSize = Radio.receiverOn((unsigned char*)&rxPacket, sizeof(rxPacket), 1000);
   // Simulate a Radio.end() call, but don't want to disable Chip Select pin
@@ -540,13 +555,18 @@ void loop()
 
     switch (rxPacket.from) {
       case (ADDRESS_WEATHER):
-        process_weatherdata();
+        /// Pond will temporarily use the Weather sensor ID
+        if (rxPacket.struct_type == POND_STRUCT) process_ponddata();
+        else process_weatherdata();
         break;
       case (ADDRESS_G2):
       case (ADDRESS_SENSOR4):
       case (ADDRESS_SENSOR5):
       case (ADDRESS_SENSOR6):
         process_sensordata();
+        break;
+      case (ADDRESS_SENSOR7):     // Pond Sensor
+        process_ponddata();
         break;
       default:
         SKETCH_PRINTLN(F("Message received from unknown sensor."));
@@ -594,6 +614,12 @@ void loop()
         myLCD.showSymbol(LCD_SEG_CLOCK, 1);
         myLCD.showSymbol(LCD_SEG_HEART, 1);
         break;
+      case ADDRESS_SENSOR7:       // 0x07
+        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+        myLCD.showSymbol(LCD_SEG_HEART, 1);
+        myLCD.showSymbol(LCD_SEG_R, 1);
+        break;
+
       default:
         break;
     }
@@ -937,6 +963,82 @@ void process_sensordata() {
 #endif // #ifdef ETHERNET_ENABLED
   }
 } // process_sensordata()
+
+void process_ponddata() {
+  if (crcFailed) {
+    // If CRC failed, increase the counter, but don't send a message.
+    CRC_count[rxPacket.from - 1]++;
+#ifdef ETHERNET_ENABLED
+    process_failedCRC();
+#endif
+  }
+  else {
+    SKETCH_PRINTLN(F("Received packet from pond sensor. "));
+    SKETCH_PRINT(F("Temperature (F): "));
+    SKETCH_PRINT(rxPacket.ponddata.MSP_T / 10);
+    SKETCH_PRINT(F("."));
+    SKETCH_PRINTLN(rxPacket.ponddata.MSP_T % 10);
+    SKETCH_PRINT(F("Battery V: "));
+    SKETCH_PRINT(rxPacket.ponddata.Batt_mV / 1000);
+    SKETCH_PRINT(F("."));
+    SKETCH_PRINT((rxPacket.ponddata.Batt_mV / 100) % 10);
+    SKETCH_PRINT((rxPacket.ponddata.Batt_mV / 10) % 10);
+    SKETCH_PRINT(rxPacket.ponddata.Batt_mV % 10);
+    SKETCH_PRINTLN(F(" "));
+    SKETCH_PRINT(F("Millis: "));
+    SKETCH_PRINTLN(rxPacket.ponddata.Millis);
+#ifdef LCD_ENABLED
+    displayTempOnLCD(rxPacket.ponddata.MSP_T);
+    myLCD.showSymbol(LCD_SEG_HEART, 1);
+    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
+    myLCD.showSymbol(LCD_SEG_R, 1);
+    currentDisplay = ADDRESS_SENSOR7;
+    temperatures[ADDRESS_SENSOR7 - 2] = rxPacket.ponddata.MSP_T;
+    batteries[ADDRESS_SENSOR7 - 2]    = rxPacket.ponddata.Batt_mV;
+    displayBattOnLCD(rxPacket.ponddata.Batt_mV);
+#endif
+#ifdef ETHERNET_ENABLED
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_TX, 1);
+#endif
+    payload[0] = '\0';
+    BuildPayload(payload, fieldBuffer, 1, rxPacket.ponddata.MSP_T);
+    BuildPayload(payload, fieldBuffer, 2, rxPacket.ponddata.SUBMERGED_T);
+    BuildPayload(payload, fieldBuffer, 3, rxPacket.ponddata.Batt_mV);
+    BuildPayload(payload, fieldBuffer, 4, rxPacket.ponddata.Millis);
+    BuildPayload(payload, fieldBuffer, 5, rxPacket.ponddata.PUMP_STATUS);
+    BuildPayload(payload, fieldBuffer, 6, rxPacket.ponddata.AERATOR_STATUS);
+    BuildPayload(payload, fieldBuffer, 7, rxPacket.ponddata.Battery_T);
+    BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    strcat(payload, fieldBuffer);
+    SKETCH_PRINTLN(F("Sending data to ThingSpeak..."));
+    SKETCH_PRINT(F("Payload: "));
+    SKETCH_PRINTLN(payload);
+    if (! Pond_Sensor.publish(payload)) {
+      SKETCH_PRINTLN(F("Pond_Sensor Channel Failed to ThingSpeak."));
+    }
+    /// Eventually add a Cayenne channel for Pond sensor
+    /*
+      SKETCH_PRINTLN(F("Sending data to Cayenne..."));
+      payload[0] = '\0';
+      sprintf(payload, "temp,f=%d.%d", rxPacket.ponddata.MSP_T / 10, rxPacket.ponddata.MSP_T % 10);
+      if (! Garage_T.publish(payload)) {
+      SKETCH_PRINTLN(F("MSP_T Failed"));
+      }
+      payload[0] = '\0';
+      sprintf(payload, "voltage,mv=%d", rxPacket.ponddata.Batt_mV);
+      if (! Garage_BATT.publish(payload)) {
+      SKETCH_PRINTLN(F("Batt Failed"));
+      }
+    */
+
+#ifdef LCD_ENABLED
+    myLCD.showSymbol(LCD_SEG_TX, 0);
+#endif
+#endif // #ifdef ETHERNET_ENABLED
+  }
+} // process_ponddata()
 
 #ifdef LCD_ENABLED
 void displayTempOnLCD(int temp) {
