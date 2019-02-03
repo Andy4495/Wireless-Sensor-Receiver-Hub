@@ -60,6 +60,7 @@
                            No longer send updates to Cayenne
                            General code cleanup
    4.8 - 02/02/19 - A.T. - Display outdoor temp on built-in LCD.
+   4.9 - 02/02/19 - A.T. - Display outdoor weather station battery level on built-in LCD.
 */
 
 /**
@@ -626,6 +627,7 @@ void process_weatherdata() {
 
 #ifdef LCD_ENABLED
     displayTempOnLCD(rxPacket.weatherdata.TMP007_Ti);
+    displayBattOnLCD(rxPacket.weatherdata.Batt_mV);
 #endif
 
 #ifdef ETHERNET_ENABLED
@@ -1079,7 +1081,7 @@ void displayTempOnLCD(int T) {
   Tprime = (T + 5) / 10;  // Add 5 to round up, then truncate the 10ths
   if (Tprime == 0) tempSign = 0; // Correct for negative tenth degrees after rounding
 
-  if (T > 999) T = 999; // Keep it to 4 digits in case we get an erroneous reading
+  if (T > 999) T = 999; // Keep it to 3 digits in case we get an erroneous reading
 
   tempChar[6] = '\0';
   tempChar[5] = ' ';
@@ -1088,7 +1090,7 @@ void displayTempOnLCD(int T) {
   Tprime = Tprime / 10;
   if (Tprime > 0) tempChar[3] = Tprime % 10 + '0';     // Tens degrees
   else tempChar[3] = ' ';
-  Tprime = Tprime / 10;                          // Hundreds degrees
+  Tprime = Tprime / 10;                                // Hundreds degrees
   if (Tprime > 0) tempChar[2] = Tprime % 10 + '0';
   else tempChar[2] = ' ';
   tempChar[1] = 'T';
@@ -1101,4 +1103,17 @@ void displayTempOnLCD(int T) {
   myLCD.showSymbol(LCD_SEG_MINUS1, tempSign);
   myLCD.showSymbol(LCD_SEG_RADIO, !EthDisconnected);
 }
+
+// MSP430G2 requires minimum 2.2V
+void displayBattOnLCD(int mV) {
+  if (mV > 2999) myLCD.showSymbol(LCD_SEG_BAT5, 1);
+  if (mV > 2800) myLCD.showSymbol(LCD_SEG_BAT4, 1);
+  if (mV > 2600) myLCD.showSymbol(LCD_SEG_BAT3, 1);
+  if (mV > 2500) myLCD.showSymbol(LCD_SEG_BAT2, 1);
+  if (mV > 2400) myLCD.showSymbol(LCD_SEG_BAT1, 1);
+  if (mV > 2300) myLCD.showSymbol(LCD_SEG_BAT0, 1);
+  myLCD.showSymbol(LCD_SEG_BAT_ENDS, 1);
+  myLCD.showSymbol(LCD_SEG_BAT_POL, 1);
+}
+
 #endif

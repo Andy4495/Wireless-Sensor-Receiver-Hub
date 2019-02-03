@@ -6,10 +6,11 @@ Wireless Sensor Receiver Hub
 This sketch is designed to run on an MSP-EXPFR6989 LaunchPad, CC110L BoosterPack, and W5200-based ethernet shield. It should run on other MSP430-based lauchpads with sufficient program memory.
 The code is not very generic and is currently written to support two types of sensors with specific data structures:
 - An outdoor weather sensing station based on the SENSORS BoosterPack
-- A temperature sensor based on an MSP430G2553
-- Two additional sensors based on MS430 internal temperature sensors, with the same data format as the G2553 sensor
+- Simple, low-power MSP430 module using its internal temperature sensor
 
-The built-in LCD display on the LaunchPad is used to display current temperature and battery levels from the sensors, plus connection status with the MQTT server. The full sensor data is sent to the MQTT server and is also output through the Serial USB backchannel at 9600 baud. The sketch currently supports Adafruit.io and Thingspeak.com MQTT servers.
+The current design sends the received sensor readings to the [ThingSpeak][5] IOT platform. Previous iterations used [Adafruit's][4] and [Cayenne's][9] platforms.
+
+The built-in LCD display on the LaunchPad is used to display current temperature and battery level from the weather station sensor, plus connection status with the MQTT server.
 
 An additional external OLED display is also supported, and can be used to print miscellaneous status information. This OLED display is optional and not necessary for basic receiver hub operation.
 
