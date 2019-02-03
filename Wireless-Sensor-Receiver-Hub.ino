@@ -55,7 +55,11 @@
                            Continue sending CRC error messages to Sensor_Errors feed, just not the data feed.
    4.5 - 09/09/18 - A.T. - Add support from pond sensor (received from the repeater).
                            Initially uses same RX ID as weather sensor; will be changed to its own ID in future.
-   4.6 - 10/07/18 - A.T. - Add support for battery temperature on pond sensor. 
+   4.6 - 10/07/18 - A.T. - Add support for battery temperature on pond sensor.
+   4.7 - 10/29/18 - A.T. - Remove built-in LCD status, use optional external OLED instead
+                           No longer send updates to Cayenne
+                           General code cleanup
+   4.8 - 02/02/19 - A.T. - Display outdoor temp on built-in LCD.
 */
 
 /**
@@ -72,7 +76,7 @@
 
    Currently defined transmitters
    - Outdoor weather station using SENSORHUB BoosterPack
-   - Simple temp monitor using MSP430G2553 internal sensor
+   - Simple temp monitor using MSP430 internal sensor
    - Additional MSP430 temp sensors using same data structure
    - Other transmitters may be defined in the future
 
@@ -83,7 +87,7 @@
    - Output stream (Serial, LCD, and/or IP)
 
    The sketch toggles Pin 12 every time through loop() so
-   long as the mqtt connection is valid. An external
+   long as the there was a valid ThingSpeak connection. An external
    watchdog module can monitor the signal and reset the
    receiver hub if the receiver hub unable to reconnect.
 
@@ -101,6 +105,9 @@
    - NewhavenOLED: https://gitlab.com/Andy4495/NewhavenOLED
        - Only used if OLED_ENABLED is #defined
 */
+
+#include <SPI.h>
+#include <AIR430BoostFCC.h>
 
 /* BOARD CONFIGURATION AND OTHER DEFINES
    -------------------------------------
@@ -130,10 +137,11 @@
    commenting the line:
      //#define SKETCH_DEBUG
 */
-//#define OLED_ENABLED
+#define OLED_ENABLED
 #define ETHERNET_ENABLED
 //#define PRINT_ALL_CLIENT_STATUS
 //#define SKETCH_DEBUG
+// -----------------------------------------------------------------------------
 
 #ifdef SKETCH_DEBUG
 #define SKETCH_PRINT(...) { Serial.print(__VA_ARGS__); }
@@ -169,25 +177,13 @@
 #define BOARD_LED LED2
 #endif
 
-/* CONTROL PIN DEFINITIONS
-   -----------------------
-
-    W5200_RESET - Connected to RESET on W5200 chip. Active LOW.
-    W5200_CS    - Connected to SCS pin on W5200 chip. Active LOW.
-    CC110L_CS   - Connected to CS pin on CC110L chip. Active LOW.
-
-    NOTE: The CS pins are also defined separately in the associated driver
-         libraries. Both the driver libraries and the following
-         definitions need to be updated in order to change the pin
-         assignments
-*/
-
-#define W5200_RESET 5
-#define W5200_CS    8
-#define CC110L_CS  18
-#define RF_GDO0    19
-#define WD_PIN     12             // Toggle for external watchdog
-
+// -----------------------------------------------------------------------------
+#ifdef LCD_ENABLED
+#include "LCD_Launchpad.h"
+LCD_LAUNCHPAD myLCD;
+#endif
+// -----------------------------------------------------------------------------
+#ifdef OLED_ENABLED
 /* OLED PIN AND HARDWARE DEFINITIONS
    ---------------------------------
    OLED_CS   - Active LOW.
@@ -206,16 +202,6 @@
 #define OLED_SCK  36
 #define OLED_ROWS  2
 #define OLED_COLS 16
-
-#include <SPI.h>
-#include <AIR430BoostFCC.h>
-
-#ifdef LCD_ENABLED
-#include "LCD_Launchpad.h"
-LCD_LAUNCHPAD myLCD;
-#endif
-
-#ifdef OLED_ENABLED
 #include <NewhavenOLED.h>
 const byte row_address[2] = {0x80, 0xC0};   // DDRAM addresses for rows (2-row models)
 NewhavenOLED oled(OLED_ROWS, OLED_COLS, OLED_SI, OLED_SCK, OLED_CS, NO_PIN);
@@ -223,12 +209,10 @@ byte oled_text[OLED_ROWS][OLED_COLS + 1] =
 { "Sensor Rx Hub   ",
   "    Initializing"
 };
-#define WEATHER_ROW 0
-#define G2_ROW 1
-#define DISPLAY_TIMEOUT 7
+#define DISPLAY_TIMEOUT 8
 int displayTimeoutCount = DISPLAY_TIMEOUT;
 #endif
-
+// -----------------------------------------------------------------------------
 #ifdef ETHERNET_ENABLED
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
@@ -246,21 +230,49 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
      #define AIO_KEY         "MQTT key required for your MQTT server account"
    If using ThingSpeak, then WRITE keys for each channel may also be #defined here.
 */
-EthernetClient client_cayenne;
 EthernetClient client_ts;
-Adafruit_MQTT_Client cayenne(&client_cayenne, CAY_SERVER, CAY_SERVERPORT, CAY_CLIENTID, CAY_USERNAME, CAY_PASSWORD);
 Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
 #define PAYLOADSIZE 132
 char payload[PAYLOADSIZE];    // MQTT payload string
 #define FIELDBUFFERSIZE 20
 char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single field of payload string
+/***** MQTT publishing feeds *****
+   Each feed/channel that you wish to publish needs to be defined.
+     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example:
+         Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
+                                        "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
+         See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
+   The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
+   specific to your configuration.
+*/
+#include "MQTT_private_feeds.h"
 #endif
-
 // -----------------------------------------------------------------------------
 
+/* -----------------------
+   CONTROL PIN DEFINITIONS
+   -----------------------
 
+    W5200_RESET - Connected to RESET on W5200 chip. Active LOW.
+    W5200_CS    - Connected to SCS pin on W5200 chip. Active LOW.
+    CC110L_CS   - Connected to CS pin on CC110L chip. Active LOW.
+
+    NOTE: The CS pins are also defined separately in the associated driver
+         libraries. Both the driver libraries and the following
+         definitions need to be updated in order to change the pin
+         assignments
+   -----------------------
+*/
+
+#define W5200_RESET 5
+#define W5200_CS    8
+#define CC110L_CS  18
+#define RF_GDO0    19
+#define WD_PIN     12             // Toggle for external watchdog
+
+// Sensor device addresses (Radio IDs)
 #define ADDRESS_LOCAL    0x01
-#define ADDRESS_WEATHER  0x02              /// Also used by the pond sensor temporarily
+#define ADDRESS_WEATHER  0x02
 #define ADDRESS_G2       0x03
 #define ADDRESS_SENSOR4  0x04
 #define ADDRESS_SENSOR5  0x05
@@ -268,14 +280,16 @@ char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single fi
 #define ADDRESS_SENSOR7  0x07
 #define LAST_ADDRESS     0x07
 
-unsigned int CRC_count[LAST_ADDRESS];
+// Declaring size of "+1" wastes a little memory, but makes the code a
+// little clearer (if only the device addresses started at zero...)
+unsigned int CRC_count[LAST_ADDRESS + 1];
 
 struct WeatherData {
   int             BME280_T;  // Tenth degrees F
   unsigned int    BME280_P;  // Pressure in inches of Hg * 100
   int             BME280_H;  // % Relative Humidity
-  int             TMP107_Ti; // Tenth degrees F
-  int             TMP107_Te; // Tenth degrees F
+  int             TMP007_Ti; // Tenth degrees F
+  int             TMP007_Te; // Tenth degrees F
   unsigned long   LUX;       // Lux units
   int             MSP_T;     // Tenth degrees F
   unsigned int    Batt_mV;   // milliVolts
@@ -323,7 +337,6 @@ struct sPacket  // CC110L packet structure
 /**
     Global data
 */
-
 struct sPacket rxPacket;
 
 int lostConnectionCount = 0;
@@ -331,39 +344,14 @@ int lastRssi, lastLqi;
 int crcFailed = 0; // 1 is bad CRC, 0 is good CRC
 int WD_state = 0;
 unsigned long lastEthernetReset = 0;
-#ifdef OLED_ENABLED
-unsigned long lastG2Millis, lastWeatherMillis;
-#endif
+int  EthDisconnected = 0; // Ethernet status
 
-#ifdef LCD_ENABLED
 int currentDisplay; //Remember which temp value is on LCD
-int temperatures[LAST_ADDRESS - 1]; // Store last temp value received
-int batteries[LAST_ADDRESS - 1];  // Store last battery reading
-// The following values store the state of the status symbols so they
-// can be restored after an LCD.clear() operation:
-int  RadioStatus = 0;
-int  TxStatus = 0;
-#endif
-int  MarkStatus = 0; // Need this state regardless of LCD, so put outside ifdef
-
-#ifdef ETHERNET_ENABLED
-/***** MQTT publishing feeds *****
-   Each feed/channel that you wish to publish needs to be defined.
-     - Adafruit IO feeds follow the form: <username>/feeds/<feedname>, for example:
-         Adafruit_MQTT_Publish pressure = Adafruit_MQTT_Publish(&mqtt,  AIO_USERNAME "/feeds/pressure");
-     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example:
-         Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
-                                        "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
-         See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
-     - Cayenne Channel format:
-     Adafruit_MQTT_Publish Topic = Adafruit_MQTT_Publish(&cayenne,
-                                "v1/" CAY_USERNAME "/things/" CAY_CLIENT_ID "/data/" CAY_CHANNEL_ID);
-       See https://mydevices.com/cayenne/docs/cayenne-mqtt-api/#cayenne-mqtt-api-mqtt-messaging-topics
-   The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
-   specific to your configuration.
-*/
-#include "MQTT_private_feeds.h"
-#endif
+// Declaring size of "+1" wastes a little memory, but makes the code a
+// little clearer (if only the device addresses started at zero...):
+int temperatures[LAST_ADDRESS + 1];        // Store last temp value received
+int batteries[LAST_ADDRESS + 1];           // Store last battery reading
+unsigned long lastTime[LAST_ADDRESS + 1];  // Store time (in millis) of last message received
 
 void setup()
 {
@@ -410,13 +398,10 @@ void setup()
   SKETCH_PRINTLN((unsigned int) * (int*)MPUSAM_reg, HEX);
 #endif
 
-  MarkStatus = 1;
 #ifdef LCD_ENABLED
   myLCD.init();
 #ifdef ETHERNET_ENABLED
   myLCD.displayText(F("ETHER "));
-  // Display the "!" LCD symbol to show we are initializing
-  myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
 #endif
   SKETCH_PRINTLN(F("Started LCD display"));
 #endif
@@ -432,8 +417,6 @@ void setup()
   SKETCH_PRINTLN(F("Starting Ethernet..."));
   Ethernet.begin(mac);
   SKETCH_PRINTLN(F("Ethernet enabled."));
-  SKETCH_PRINTLN("Attempting to connect to Cayenne...");
-  MQTT_connect(&cayenne, &client_cayenne);
   SKETCH_PRINTLN("Attempting to connect to Thingspeak...");
   MQTT_connect(&thingspeak, &client_ts);
 #endif
@@ -448,26 +431,20 @@ void setup()
   delay(500);
   digitalWrite(BOARD_LED, LOW);
 
-  pinMode(PUSH1, INPUT_PULLUP);     // PUSH1 cycles LCD display
+  pinMode(PUSH1, INPUT_PULLUP);     // PUSH1 Cycles OLED display
   pinMode(PUSH2, INPUT_PULLUP);     // PUSH2 temporarily turns on OLED
 
-#ifdef OLED_ENABLED
-  lastG2Millis = millis();
-  lastWeatherMillis = lastG2Millis;
-#endif
-
 #ifdef LCD_ENABLED
-  for (int i = 0; i < (LAST_ADDRESS - 2); i++) {
+  for (int i = 0; i < LAST_ADDRESS + 1; i++) {
     temperatures[i] = 0;
     batteries[i] = 0;
+    lastTime[i] = 0;
   }
   myLCD.displayText(F("RX ON "));
-  RadioStatus = 1;
-  myLCD.showSymbol(LCD_SEG_RADIO, RadioStatus);
   SKETCH_PRINTLN(F("Waiting for first Rx message. "));
 #endif
 
-  for (int i = 0; i < LAST_ADDRESS; i++) CRC_count[i] = 0; // Clear the counter
+  for (int i = 0; i < LAST_ADDRESS + 1; i++) CRC_count[i] = 0; // Clear the counter
 }
 
 void loop()
@@ -475,20 +452,18 @@ void loop()
 #ifdef ETHERNET_ENABLED
   // Ensure the connection to the MQTT server is alive (this will make the first
   // connection and automatically reconnect when disconnected).
-  MQTT_connect(&cayenne, &client_cayenne);
   MQTT_connect(&thingspeak, &client_ts);
 #ifdef PRINT_ALL_CLIENT_STATUS
   SKETCH_PRINT(F("Ethernet Maintain status: "));
   SKETCH_PRINTLN(Ethernet.maintain());
 #endif
-  printClientStatus(&client_cayenne);
   printClientStatus(&client_ts);
 #endif
 
   // Flip the watchdog pin once per loop if we are connected
   // If there is no ethernet, then flip the pin every time through loop
 #ifdef ETHERNET_ENABLED
-  if (MarkStatus == 0) {
+  if (EthDisconnected == 0) {
 #endif
     WD_state = !WD_state;
     digitalWrite(WD_PIN, WD_state);
@@ -514,9 +489,11 @@ void loop()
       displayTimeoutCount = 0;
       break;
     default:
+      buildStatusString();        // Put the data into display buffer
+      oledDisplay();              // Write to the display
       displayTimeoutCount++;
+      break;
   }
-
 #endif
 
   int packetSize;
@@ -537,9 +514,6 @@ void loop()
 
   if (packetSize > 0) {
     digitalWrite(BOARD_LED, HIGH);
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_RX, 1);
-#endif
     SKETCH_PRINTLN(F("--"));
     SKETCH_PRINT(F("Received packet from device: "));
     SKETCH_PRINT(rxPacket.from);
@@ -555,9 +529,7 @@ void loop()
 
     switch (rxPacket.from) {
       case (ADDRESS_WEATHER):
-        /// Pond will temporarily use the Weather sensor ID
-        if (rxPacket.struct_type == POND_STRUCT) process_ponddata();
-        else process_weatherdata();
+        process_weatherdata();
         break;
       case (ADDRESS_G2):
       case (ADDRESS_SENSOR4):
@@ -579,103 +551,52 @@ void loop()
     SKETCH_PRINTLN(lastLqi);
     SKETCH_PRINTLN(F("--"));
     digitalWrite(BOARD_LED, LOW);
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_RX, 0);
-#endif
   }
   else {
     SKETCH_PRINT(F("Nothing received: "));
     SKETCH_PRINTLN(millis());
   }
 
-#ifdef LCD_ENABLED
-  if (digitalRead(PUSH1) == 0) {
-    myLCD.clear();
-    currentDisplay++;
-    if (currentDisplay > LAST_ADDRESS) currentDisplay = 2;
-    displayTempOnLCD(temperatures[currentDisplay - 2]);
-    displayBattOnLCD(batteries[currentDisplay - 2]);
-    switch (currentDisplay) {
-      case ADDRESS_WEATHER:       // 0x02
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        break;
-      case ADDRESS_G2:            // 0x03
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        myLCD.showSymbol(LCD_SEG_R, 1);
-        break;
-      case ADDRESS_SENSOR4:       // 0x04
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        break;
-      case ADDRESS_SENSOR5:       // 0x05
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        myLCD.showSymbol(LCD_SEG_R, 1);
-        break;
-      case ADDRESS_SENSOR6:       // 0x06
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        break;
-      case ADDRESS_SENSOR7:       // 0x07
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        myLCD.showSymbol(LCD_SEG_R, 1);
-        break;
-
-      default:
-        break;
-    }
-#ifdef ETHERNET_ENABLED
-    payload[0] = '\0';
-    BuildPayload(payload, fieldBuffer, 12, "PUSH1 Pressed.");
-    if (! Sensor_Errors.publish(payload)) {
-      SKETCH_PRINTLN(F("Failed to send PUSH1 to ThingSpeak"));
-    }
-#endif
-  }
-#endif
-
 #ifdef ETHERNET_ENABLED
   // ping the server to keep the mqtt connection alive
-  if (! cayenne.ping()) {
-    cayenne.disconnect();
-    SKETCH_PRINTLN(F("Cayenne MQTT ping failed, disconnecting."));
-    MarkStatus = 1;
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
-#endif
-  }
   if (! thingspeak.ping()) {
     thingspeak.disconnect();
     SKETCH_PRINTLN(F("ThingSpeak MQTT ping failed, disconnecting."));
-    MarkStatus = 1;
+    EthDisconnected = 1;
 #ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
+    myLCD.showSymbol(LCD_SEG_RADIO, false);
 #endif
   }
+  else
+    myLCD.showSymbol(LCD_SEG_RADIO, true);
 #endif
-}
+} // loop()
 
 void process_weatherdata() {
   if (crcFailed) {
     // If CRC failed, increase the counter, but don't send a message.
-    CRC_count[rxPacket.from - 1]++;
+    CRC_count[rxPacket.from]++;
 #ifdef ETHERNET_ENABLED
     process_failedCRC();
 #endif
   }
   else {
+    temperatures[rxPacket.from] = rxPacket.weatherdata.TMP007_Ti;
+    batteries[rxPacket.from] = rxPacket.weatherdata.Batt_mV;
+    lastTime[rxPacket.from] = millis();
     SKETCH_PRINTLN(F("Temperature (F): "));
     SKETCH_PRINT(F("    BME280:  "));
     SKETCH_PRINT(rxPacket.weatherdata.BME280_T / 10);
     SKETCH_PRINT(F("."));
     SKETCH_PRINTLN(rxPacket.weatherdata.BME280_T % 10);
     SKETCH_PRINT(F("    TMP106 (Die):  "));
-    SKETCH_PRINT(rxPacket.weatherdata.TMP107_Ti / 10);
+    SKETCH_PRINT(rxPacket.weatherdata.TMP007_Ti / 10);
     SKETCH_PRINT(F("."));
-    SKETCH_PRINTLN(rxPacket.weatherdata.TMP107_Ti % 10);
+    SKETCH_PRINTLN(rxPacket.weatherdata.TMP007_Ti % 10);
     SKETCH_PRINT(F("    TMP106 (Ext):  "));
-    SKETCH_PRINT(rxPacket.weatherdata.TMP107_Te / 10);
+    SKETCH_PRINT(rxPacket.weatherdata.TMP007_Te / 10);
     SKETCH_PRINT(F("."));
-    SKETCH_PRINTLN(rxPacket.weatherdata.TMP107_Te % 10);
+    SKETCH_PRINTLN(rxPacket.weatherdata.TMP007_Te % 10);
     SKETCH_PRINT(F("    MSP Die: "));
     SKETCH_PRINT(rxPacket.weatherdata.MSP_T / 10);
     SKETCH_PRINT(F("."));
@@ -697,9 +618,6 @@ void process_weatherdata() {
     SKETCH_PRINT((rxPacket.weatherdata.Batt_mV / 100) % 10);
     SKETCH_PRINT((rxPacket.weatherdata.Batt_mV / 10) % 10);
     SKETCH_PRINT(rxPacket.weatherdata.Batt_mV % 10);
-    if (rxPacket.weatherdata.Batt_mV < 2400) {
-      SKETCH_PRINT(F("   *** Out of Spec ***"));
-    }
     SKETCH_PRINTLN(F(" "));
     SKETCH_PRINT(("Loops: "));
     SKETCH_PRINTLN(rxPacket.weatherdata.Loops);
@@ -707,57 +625,22 @@ void process_weatherdata() {
     SKETCH_PRINTLN(rxPacket.weatherdata.Millis);
 
 #ifdef LCD_ENABLED
-    displayTempOnLCD(rxPacket.weatherdata.TMP107_Ti);
-    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-    displayBattOnLCD(rxPacket.weatherdata.Batt_mV);
-    currentDisplay = ADDRESS_WEATHER;
-    temperatures[ADDRESS_WEATHER - 2] = rxPacket.weatherdata.TMP107_Ti;
-    batteries[ADDRESS_WEATHER - 2]    = rxPacket.weatherdata.Batt_mV;
+    displayTempOnLCD(rxPacket.weatherdata.TMP007_Ti);
 #endif
 
 #ifdef ETHERNET_ENABLED
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 1);
-#endif
-    SKETCH_PRINTLN(F("Sending data to Cayenne..."));
-    payload[0] = '\0';
-    sprintf(payload, "temp,f=%d.%d", rxPacket.weatherdata.TMP107_Ti / 10, rxPacket.weatherdata.TMP107_Ti % 10);
-    if (! Weather_TMP007I.publish(payload)) {
-      SKETCH_PRINTLN(F("TMP107_Ti Failed"));
-    }
-    payload[0] = '\0';
-    sprintf(payload, "bp,hpa=%d", rxPacket.weatherdata.BME280_P);
-    if (! Weather_BME280P.publish(payload)) {
-      SKETCH_PRINTLN(F("BME280_P Failed"));
-    }
-    payload[0] = '\0';
-    sprintf(payload, "rel_hum,p=%d.%d", rxPacket.weatherdata.BME280_H / 10, rxPacket.weatherdata.BME280_H % 10);
-    if (! Weather_BME280H.publish(payload)) {
-      SKETCH_PRINTLN(F("RH Failed"));
-    }
-    payload[0] = '\0';
-    sprintf(payload, "lum,lux=%lu", rxPacket.weatherdata.LUX);
-    if (! Weather_LUX.publish(payload)) {
-      SKETCH_PRINTLN(F("LUX Failed"));
-    }
-    payload[0] = '\0';
-    sprintf(payload, "voltage,mv=%d", rxPacket.weatherdata.Batt_mV);
-    if (! Weather_BATT.publish(payload)) {
-      SKETCH_PRINTLN(F("Batt Failed"));
-    }
-
     SKETCH_PRINTLN(F("Sending data to ThingSpeak Weather_Channel..."));
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, rxPacket.weatherdata.BME280_T);
-    BuildPayload(payload, fieldBuffer, 2, rxPacket.weatherdata.TMP107_Te);
-    BuildPayload(payload, fieldBuffer, 3, rxPacket.weatherdata.TMP107_Ti);
+    BuildPayload(payload, fieldBuffer, 2, rxPacket.weatherdata.TMP007_Te);
+    BuildPayload(payload, fieldBuffer, 3, rxPacket.weatherdata.TMP007_Ti);
     BuildPayload(payload, fieldBuffer, 4, rxPacket.weatherdata.MSP_T);
     BuildPayload(payload, fieldBuffer, 5, rxPacket.weatherdata.BME280_H);
     BuildPayload(payload, fieldBuffer, 6, rxPacket.weatherdata.BME280_P);
     BuildPayload(payload, fieldBuffer, 7, rxPacket.weatherdata.LUX);
     BuildPayload(payload, fieldBuffer, 8, rxPacket.weatherdata.Batt_mV);
     BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
-    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from]);
     strcat(payload, fieldBuffer);
     SKETCH_PRINT(F("Payload: "));
     SKETCH_PRINTLN(payload);
@@ -783,26 +666,22 @@ void process_weatherdata() {
         SKETCH_PRINTLN(F("Failed to send weak signal to ThingSpeak"));
       }
     }
-
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 0);
-#endif
 #endif  // #ifdef ETHERNET_ENABLED
-#ifdef OLED_ENABLED
-    lastWeatherMillis = millis();
-#endif
   }
 } // process_weatherdata()
 
 void process_sensordata() {
   if (crcFailed) {
     // If CRC failed, increase the counter, but don't send a message.
-    CRC_count[rxPacket.from - 1]++;
+    CRC_count[rxPacket.from]++;
 #ifdef ETHERNET_ENABLED
     process_failedCRC();
 #endif
   }
   else {
+    temperatures[rxPacket.from] = rxPacket.sensordata.MSP_T;
+    batteries[rxPacket.from] = rxPacket.sensordata.Batt_mV;
+    lastTime[rxPacket.from] = millis();
     SKETCH_PRINT(F("Received packet from temperature sensor: "));
     SKETCH_PRINTLN(rxPacket.from);
     SKETCH_PRINT(F("Temperature (F): "));
@@ -815,9 +694,6 @@ void process_sensordata() {
     SKETCH_PRINT((rxPacket.sensordata.Batt_mV / 100) % 10);
     SKETCH_PRINT((rxPacket.sensordata.Batt_mV / 10) % 10);
     SKETCH_PRINT(rxPacket.sensordata.Batt_mV % 10);
-    if (rxPacket.sensordata.Batt_mV < 2200) {
-      SKETCH_PRINT(F("   *** Out of Spec ***"));
-    }
     SKETCH_PRINTLN(F(" "));
     SKETCH_PRINT(F("Loops: "));
     SKETCH_PRINTLN(rxPacket.sensordata.Loops);
@@ -829,45 +705,8 @@ void process_sensordata() {
       SKETCH_PRINT(F("Door: "));
       SKETCH_PRINTLN(rxPacket.sensordata.Door_Sensor);
     }
-#ifdef LCD_ENABLED
-    displayTempOnLCD(rxPacket.sensordata.MSP_T);
-    switch (rxPacket.from) {
-      case ADDRESS_G2:
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        myLCD.showSymbol(LCD_SEG_R, 1);
-        currentDisplay = ADDRESS_G2;
-        temperatures[ADDRESS_G2 - 2] = rxPacket.sensordata.MSP_T;
-        batteries[ADDRESS_G2 - 2]    = rxPacket.sensordata.Batt_mV;
-        break;
-      case ADDRESS_SENSOR4:
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        currentDisplay = ADDRESS_SENSOR4;
-        temperatures[ADDRESS_SENSOR4 - 2] = rxPacket.sensordata.MSP_T;
-        batteries[ADDRESS_SENSOR4 - 2]    = rxPacket.sensordata.Batt_mV;
-        break;
-      case ADDRESS_SENSOR5:
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        myLCD.showSymbol(LCD_SEG_R, 1);
-        currentDisplay = ADDRESS_SENSOR5;
-        temperatures[ADDRESS_SENSOR5 - 2] = rxPacket.sensordata.MSP_T;
-        batteries[ADDRESS_SENSOR5 - 2]    = rxPacket.sensordata.Batt_mV;
-        break;
-      case ADDRESS_SENSOR6:
-        myLCD.showSymbol(LCD_SEG_HEART, 1);
-        myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-        currentDisplay = ADDRESS_SENSOR6;
-        temperatures[ADDRESS_SENSOR6 - 2] = rxPacket.sensordata.MSP_T;
-        batteries[ADDRESS_SENSOR6 - 2]    = rxPacket.sensordata.Batt_mV;
-        break;
-      default:
-        break;
-    }
-    displayBattOnLCD(rxPacket.sensordata.Batt_mV);
-#endif
+
 #ifdef ETHERNET_ENABLED
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 1);
-#endif
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, rxPacket.sensordata.MSP_T);
     BuildPayload(payload, fieldBuffer, 2, rxPacket.sensordata.Batt_mV);
@@ -879,7 +718,7 @@ void process_sensordata() {
     BuildPayload(payload, fieldBuffer, 5, lastRssi);
     BuildPayload(payload, fieldBuffer, 6, lastLqi);
     BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
-    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from]);
     strcat(payload, fieldBuffer);
     switch (rxPacket.from) {
       case ADDRESS_G2:
@@ -888,17 +727,6 @@ void process_sensordata() {
         SKETCH_PRINTLN(payload);
         if (! Temp_Slim.publish(payload)) {
           SKETCH_PRINTLN(F("Temp_Slim Channel Failed to ThingSpeak."));
-        }
-        SKETCH_PRINTLN(F("Sending data to Cayenne..."));
-        payload[0] = '\0';
-        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T / 10, rxPacket.sensordata.MSP_T % 10);
-        if (! Slim_T.publish(payload)) {
-          SKETCH_PRINTLN(F("MSP_T Failed"));
-        }
-        payload[0] = '\0';
-        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
-        if (! Slim_BATT.publish(payload)) {
-          SKETCH_PRINTLN(F("Batt Failed"));
         }
         break;
       case ADDRESS_SENSOR4:
@@ -916,17 +744,6 @@ void process_sensordata() {
         if (! Temp_Sensor5.publish(payload)) {
           SKETCH_PRINTLN(F("Temp_Sensor5 Channel Failed to ThingSpeak."));
         }
-        SKETCH_PRINTLN(F("Sending data to Cayenne..."));
-        payload[0] = '\0';
-        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T / 10, rxPacket.sensordata.MSP_T % 10);
-        if (! Indoor_T.publish(payload)) {
-          SKETCH_PRINTLN(F("MSP_T Failed"));
-        }
-        payload[0] = '\0';
-        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
-        if (! Indoor_BATT.publish(payload)) {
-          SKETCH_PRINTLN(F("Batt Failed"));
-        }
         break;
       case ADDRESS_SENSOR6:
         BuildPayload(payload, fieldBuffer, 7, millis() / 1000 / 60);             // Send RX hub uptime in minutes
@@ -937,29 +754,10 @@ void process_sensordata() {
         if (! Temp_Sensor6.publish(payload)) {
           SKETCH_PRINTLN(F("Temp_Sensor6 Channel Failed to ThingSpeak."));
         }
-        SKETCH_PRINTLN(F("Sending data to Cayenne..."));
-        payload[0] = '\0';
-        sprintf(payload, "temp,f=%d.%d", rxPacket.sensordata.MSP_T / 10, rxPacket.sensordata.MSP_T % 10);
-        if (! Garage_T.publish(payload)) {
-          SKETCH_PRINTLN(F("MSP_T Failed"));
-        }
-        payload[0] = '\0';
-        sprintf(payload, "voltage,mv=%d", rxPacket.sensordata.Batt_mV);
-        if (! Garage_BATT.publish(payload)) {
-          SKETCH_PRINTLN(F("Batt Failed"));
-        }
-        payload[0] = '\0';
-        sprintf(payload, "digital_sensor,d=%d", (rxPacket.sensordata.Door_Sensor > 45) ? 1 : 0);
-        if (! Garage_DOOR_digital.publish(payload)) {
-          SKETCH_PRINTLN(F("Door Failed"));
-        }
         break;
       default:
         break;
     }
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 0);
-#endif
 #endif // #ifdef ETHERNET_ENABLED
   }
 } // process_sensordata()
@@ -967,17 +765,20 @@ void process_sensordata() {
 void process_ponddata() {
   if (crcFailed) {
     // If CRC failed, increase the counter, but don't send a message.
-    CRC_count[rxPacket.from - 1]++;
+    CRC_count[rxPacket.from]++;
 #ifdef ETHERNET_ENABLED
     process_failedCRC();
 #endif
   }
   else {
+    temperatures[rxPacket.from] = rxPacket.ponddata.SUBMERGED_T;
+    batteries[rxPacket.from] = rxPacket.weatherdata.Batt_mV;
+    lastTime[rxPacket.from] = millis();
     SKETCH_PRINTLN(F("Received packet from pond sensor. "));
     SKETCH_PRINT(F("Temperature (F): "));
-    SKETCH_PRINT(rxPacket.ponddata.MSP_T / 10);
+    SKETCH_PRINT(rxPacket.ponddata.SUBMERGED_T / 10);
     SKETCH_PRINT(F("."));
-    SKETCH_PRINTLN(rxPacket.ponddata.MSP_T % 10);
+    SKETCH_PRINTLN(rxPacket.ponddata.SUBMERGED_T % 10);
     SKETCH_PRINT(F("Battery V: "));
     SKETCH_PRINT(rxPacket.ponddata.Batt_mV / 1000);
     SKETCH_PRINT(F("."));
@@ -987,20 +788,7 @@ void process_ponddata() {
     SKETCH_PRINTLN(F(" "));
     SKETCH_PRINT(F("Millis: "));
     SKETCH_PRINTLN(rxPacket.ponddata.Millis);
-#ifdef LCD_ENABLED
-    displayTempOnLCD(rxPacket.ponddata.MSP_T);
-    myLCD.showSymbol(LCD_SEG_HEART, 1);
-    myLCD.showSymbol(LCD_SEG_CLOCK, 1);
-    myLCD.showSymbol(LCD_SEG_R, 1);
-    currentDisplay = ADDRESS_SENSOR7;
-    temperatures[ADDRESS_SENSOR7 - 2] = rxPacket.ponddata.MSP_T;
-    batteries[ADDRESS_SENSOR7 - 2]    = rxPacket.ponddata.Batt_mV;
-    displayBattOnLCD(rxPacket.ponddata.Batt_mV);
-#endif
 #ifdef ETHERNET_ENABLED
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 1);
-#endif
     payload[0] = '\0';
     BuildPayload(payload, fieldBuffer, 1, rxPacket.ponddata.MSP_T);
     BuildPayload(payload, fieldBuffer, 2, rxPacket.ponddata.SUBMERGED_T);
@@ -1010,7 +798,7 @@ void process_ponddata() {
     BuildPayload(payload, fieldBuffer, 6, rxPacket.ponddata.AERATOR_STATUS);
     BuildPayload(payload, fieldBuffer, 7, rxPacket.ponddata.Battery_T);
     BuildPayload(payload, fieldBuffer, 12, "CRC Errors: ");
-    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from - 1]);
+    snprintf(fieldBuffer, FIELDBUFFERSIZE, "%u", CRC_count[rxPacket.from]);
     strcat(payload, fieldBuffer);
     SKETCH_PRINTLN(F("Sending data to ThingSpeak..."));
     SKETCH_PRINT(F("Payload: "));
@@ -1018,71 +806,10 @@ void process_ponddata() {
     if (! Pond_Sensor.publish(payload)) {
       SKETCH_PRINTLN(F("Pond_Sensor Channel Failed to ThingSpeak."));
     }
-    /// Eventually add a Cayenne channel for Pond sensor
-    /*
-      SKETCH_PRINTLN(F("Sending data to Cayenne..."));
-      payload[0] = '\0';
-      sprintf(payload, "temp,f=%d.%d", rxPacket.ponddata.MSP_T / 10, rxPacket.ponddata.MSP_T % 10);
-      if (! Garage_T.publish(payload)) {
-      SKETCH_PRINTLN(F("MSP_T Failed"));
-      }
-      payload[0] = '\0';
-      sprintf(payload, "voltage,mv=%d", rxPacket.ponddata.Batt_mV);
-      if (! Garage_BATT.publish(payload)) {
-      SKETCH_PRINTLN(F("Batt Failed"));
-      }
-    */
-
-#ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_TX, 0);
-#endif
 #endif // #ifdef ETHERNET_ENABLED
   }
 } // process_ponddata()
 
-#ifdef LCD_ENABLED
-void displayTempOnLCD(int temp) {
-  char tempChar[32];
-  int tempLen;
-  int tempSign;
-
-  if (temp < 0) {
-    tempSign = 1;
-    temp = -temp;
-  } else tempSign = 0;
-  itoa(temp, tempChar, 10);
-  tempLen = strlen(tempChar);
-  myLCD.clear();
-  // Need to add a leading zero if len == 1
-  if (tempLen == 1) {
-    char x = tempChar[0];
-    tempChar[0] = 0;
-    tempChar[1] = x;
-    tempChar[2] = '\0';
-    tempLen = 2;
-  }
-  for (int i = 0; i < tempLen; i++) {
-    myLCD.showChar(tempChar[i], 5 - tempLen + i);
-  }
-  myLCD.showSymbol(LCD_SEG_DOT4, 1);
-  myLCD.showSymbol(LCD_SEG_DEG5, 1);
-  myLCD.showSymbol(LCD_SEG_MINUS1, tempSign);
-  myLCD.showSymbol(LCD_SEG_RADIO, RadioStatus);
-  myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
-  myLCD.showSymbol(LCD_SEG_TX, TxStatus);
-}
-
-void displayBattOnLCD(int mV) {
-  if (mV > 3200) myLCD.showSymbol(LCD_SEG_BAT5, 1);
-  if (mV > 3000) myLCD.showSymbol(LCD_SEG_BAT4, 1);
-  if (mV > 2800) myLCD.showSymbol(LCD_SEG_BAT3, 1);
-  if (mV > 2600) myLCD.showSymbol(LCD_SEG_BAT2, 1);
-  if (mV > 2400) myLCD.showSymbol(LCD_SEG_BAT1, 1);
-  if (mV > 2200) myLCD.showSymbol(LCD_SEG_BAT0, 1);
-  myLCD.showSymbol(LCD_SEG_BAT_ENDS, 1);
-  myLCD.showSymbol(LCD_SEG_BAT_POL, 1);
-}
-#endif
 
 // Function to connect and reconnect as necessary to the MQTT server.
 // Should be called in the loop function and it will take care of connecting.
@@ -1092,17 +819,17 @@ void MQTT_connect(Adafruit_MQTT_Client * mqtt_server, EthernetClient * client ) 
 
   // Return if already connected.
   if (mqtt_server->connected()) {
-    MarkStatus = 0;
+    EthDisconnected = 0;
 #ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
+    myLCD.showSymbol(LCD_SEG_RADIO, true);
 #endif
     return;
   }
 
   SKETCH_PRINTLN(F("MQTT Disconnected."));
-  MarkStatus = 1;
+  EthDisconnected = 1;
 #ifdef LCD_ENABLED
-  myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
+  myLCD.showSymbol(LCD_SEG_RADIO, false);
 #endif
   printClientStatus(client);
   SKETCH_PRINT(F("Attempting reconnect to MQTT: "));
@@ -1126,7 +853,6 @@ void MQTT_connect(Adafruit_MQTT_Client * mqtt_server, EthernetClient * client ) 
       oled.command(0x08);
       displayTimeoutCount = 0;
 #endif
-      client_cayenne.stop();
       client_ts.stop();
       digitalWrite(W5200_RESET, LOW);
       delay(5);
@@ -1140,20 +866,11 @@ void MQTT_connect(Adafruit_MQTT_Client * mqtt_server, EthernetClient * client ) 
   }
   SKETCH_PRINTLN(mqtt_server->connectErrorString(ret));
   if (ret == 0) {
-    MarkStatus = 0;
+    EthDisconnected = 0;
 #ifdef LCD_ENABLED
-    myLCD.showSymbol(LCD_SEG_MARK, MarkStatus);
+    myLCD.showSymbol(LCD_SEG_RADIO, true);
 #endif
   }
-  /* Comment out the loop; just try once and let loop() take care of reconnecting
-    while ((ret = mqtt_server->connect()) != 0) { // connect will return 0 for connected
-      SKETCH_PRINTLN(mqtt_server->connectErrorString(ret));
-      SKETCH_PRINTLN("Retrying MQTT connection in 5 seconds...");
-      mqtt_server->disconnect();
-      delay(5000);  // wait 5 seconds
-    }
-    SKETCH_PRINTLN("MQTT Connected!");
-  */
 }
 #endif
 
@@ -1245,27 +962,24 @@ void buildStatusString() {
   int splen;
   unsigned long timeSince;
 
-  // Make sure the printed values are bounded to fit in the display width
-  timeSince = (millis() - lastWeatherMillis) / 1000;
-  if (timeSince > 99999) timeSince = 99999;
-  // Print # seconds since last message received
-  splen = sprintf((char*)oled_text[WEATHER_ROW], OLED_COLS + 1, "Weather: %d", timeSince);
+  splen = snprintf((char*)oled_text[0], OLED_COLS + 1, "%d: T=%3d, V=%d.%02d",
+                   displayTimeoutCount, temperatures[displayTimeoutCount],
+                   batteries[displayTimeoutCount] / 1000, ((batteries[displayTimeoutCount] % 1000) + 5) / 10 );
   // Pad the rest of the string with spaces.
   for (int i = splen; i < OLED_COLS; i++) {
-    oled_text[WEATHER_ROW][i] = ' ';
+    oled_text[0][i] = ' ';
   }
-  oled_text[WEATHER_ROW][OLED_COLS] = '\0';
+  oled_text[0][OLED_COLS] = '\0';
 
-  // Make sure the printed values are bounded to fit in the display width
-  timeSince = (millis() - lastG2Millis) / 1000;
-  if (timeSince > 99999) timeSince = 99999;
-  // Print # seconds since last message received
-  splen = sprintf((char*)oled_text[G2_ROW], OLED_COLS + 1, "Slim: %d", timeSince);
+  timeSince = (millis() - lastTime[displayTimeoutCount]) / 1000 / 60;
+  if (timeSince > 9999) timeSince = 9999;
+  // Print # minutes since last message received
+  splen = snprintf((char*)oled_text[1], OLED_COLS + 1, "Last: %4d mins", timeSince);
   // Pad the rest of the string with spaces.
   for (int i = splen; i < OLED_COLS; i++) {
-    oled_text[G2_ROW][i] = ' ';
+    oled_text[1][i] = ' ';
   }
-  oled_text[G2_ROW][OLED_COLS] = '\0';
+  oled_text[1][OLED_COLS] = '\0';
 }
 #endif
 
@@ -1346,5 +1060,45 @@ void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, unsigned
 void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, const char* data) {
   snprintf(dataFieldBuffer, FIELDBUFFERSIZE, data);
   BuildPayload(msgBuffer, fieldNum, dataFieldBuffer);
+}
+#endif
+
+#ifdef LCD_ENABLED
+void displayTempOnLCD(int T) {
+#define DISPLAYSIZE 6
+  char tempChar[DISPLAYSIZE + 1];
+  int tempLen;
+  int tempSign;
+  int Tprime;
+
+  if (T < 0) {
+    tempSign = 1;
+    T = -T;
+  } else tempSign = 0;
+
+  Tprime = (T + 5) / 10;  // Add 5 to round up, then truncate the 10ths
+  if (Tprime == 0) tempSign = 0; // Correct for negative tenth degrees after rounding
+
+  if (T > 999) T = 999; // Keep it to 4 digits in case we get an erroneous reading
+
+  tempChar[6] = '\0';
+  tempChar[5] = ' ';
+  if (Tprime > 0) tempChar[4] = Tprime % 10 + '0';     // Ones degrees
+  else tempChar[4] = '0';
+  Tprime = Tprime / 10;
+  if (Tprime > 0) tempChar[3] = Tprime % 10 + '0';     // Tens degrees
+  else tempChar[3] = ' ';
+  Tprime = Tprime / 10;                          // Hundreds degrees
+  if (Tprime > 0) tempChar[2] = Tprime % 10 + '0';
+  else tempChar[2] = ' ';
+  tempChar[1] = 'T';
+  tempChar[0] = ' ';
+
+  myLCD.clear();
+  myLCD.displayText(tempChar);
+  myLCD.showSymbol(LCD_SEG_COLON2, 1);
+  myLCD.showSymbol(LCD_SEG_DEG5, 1);
+  myLCD.showSymbol(LCD_SEG_MINUS1, tempSign);
+  myLCD.showSymbol(LCD_SEG_RADIO, !EthDisconnected);
 }
 #endif
