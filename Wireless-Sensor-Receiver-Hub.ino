@@ -1,6 +1,6 @@
 /**
    Sensor Receiver Station
-   https://github.com/Andy4495/Sensor-Receiver
+   https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
 
    1.0 - 11/19/17 - A.T. - Original
    1.1 - 11/19/17 - A.T. - Display info on built-in LCD
