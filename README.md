@@ -16,7 +16,7 @@ An additional external OLED display is also supported, and can be used to print 
 
 Additional sensors and changes to the data structures of the existing sensors would require changes to this sketch. Feel free to use this as a starting point, but do not expect it to work as-is for your application.
 
-See the [Hardware](https://gitlab.com/Andy4495/Sensor-Receiver/tree/master/Hardware) folder for specific hardware details.
+See the [Hardware](https://github.com/Andy4495/Sensor-Receiver/tree/master/Hardware) folder for specific hardware details.
 
 Please read the .ino file comments for details on the software operation.
 
@@ -33,7 +33,7 @@ The details on the contents of these files are in the .ino file comments.
   *See the [Adafruit_MQTT][8] readme file for changes necessary to support long `connect` messages, which are generated when using the [Cayenne][9] platform.*
 * [WIZnet Ethernet](https://github.com/Wiznet/WIZ_Ethernet_Library)  
   *[Modifications](./Ethernet.md) are required to work with Energia and fix a memory leak.*
-* [NewhavenOLED](https://gitlab.com/Andy4495/NewhavenOLED)  
+* [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
   _The NewhavenOLED library is only needed if you plan to use an external OLED
   display as mentioned above._
 

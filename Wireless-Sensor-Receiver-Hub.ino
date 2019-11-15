@@ -1,6 +1,6 @@
 /**
    Sensor Receiver Station
-   https://gitlab.com/Andy4495/Sensor-Receiver
+   https://github.com/Andy4495/Sensor-Receiver
 
    1.0 - 11/19/17 - A.T. - Original
    1.1 - 11/19/17 - A.T. - Display info on built-in LCD
@@ -103,7 +103,7 @@
          to remove support for floating point. Specifically,
          commented out the block starting with:
             "else if (sub->callback_double != NULL)"
-   - NewhavenOLED: https://gitlab.com/Andy4495/NewhavenOLED
+   - NewhavenOLED: https://github.com/Andy4495/NewhavenOLED
        - Only used if OLED_ENABLED is #defined
 */
 
