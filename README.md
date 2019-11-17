@@ -16,7 +16,7 @@ An additional external OLED display is also supported, and can be used to print 
 
 Additional sensors and changes to the data structures of the existing sensors would require changes to this sketch. Feel free to use this as a starting point, but do not expect it to work as-is for your application.
 
-See the [Hardware](https://github.com/Andy4495/Sensor-Receiver/tree/master/Hardware) folder for specific hardware details.
+See the [Hardware](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/tree/master/Hardware) folder for specific hardware details.
 
 Please read the .ino file comments for details on the software operation.
 
