@@ -45,6 +45,9 @@ The details on the contents of these files are in the .ino file comments.
 * [ThingSpeak][5] IoT Platform
 * [Cayenne][9] IoT Platform
 
+## License ##
+The software and other files in this repository are released under what is commonly called the [MIT License][100]. See the file [`LICENSE.txt`][101] in this repository.
+
 [1]: http://www.ti.com/tool/MSP-EXP430FR6989
 [2]: http://www.ti.com/tool/430BOOST-CC110L
 [3]: http://wiki.seeedstudio.com/Ethernet_Shield_V2.0/
@@ -52,3 +55,5 @@ The details on the contents of these files are in the .ino file comments.
 [5]: https://thingspeak.com/
 [8]: ./Adafruit_MQTT.md
 [9]: https://cayenne.mydevices.com
+[100]: https://choosealicense.com/licenses/mit/
+[101]: ./LICENSE.txt
