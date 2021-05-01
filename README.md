@@ -1,10 +1,10 @@
-Wireless Sensor Receiver Hub
-============================
+# Wireless Sensor Receiver Hub
 
 ![Fully assembled Hub: Ethernet Shield (bottom), Shield-LaunchPad Interface (middle-bottom), MSP-EXP430FR6989 LaunchPad (middle-top), and CC110L BoosterPack (top).](jpg/hub.jpg)
 
 This sketch is designed to run on an MSP-EXPFR6989 LaunchPad, CC110L BoosterPack, and W5200-based ethernet shield. It should run on other MSP430-based lauchpads with sufficient program memory.
 The code is not very generic and is currently written to support two types of sensors with specific data structures:
+
 - An outdoor weather sensing station based on the SENSORS BoosterPack
 - Simple, low-power MSP430 module using its internal temperature sensor
 
@@ -20,32 +20,34 @@ See the [Hardware](./Hardware) folder for specific hardware details.
 
 Please read the .ino file comments for details on the software operation.
 
-## External Header Files ##
+## External Header Files
 
 In order to compile the code, two header files are needed:
-* MQTT_private_config.h
-* MQTT_private_feeds.h
+
+- MQTT_private_config.h
+- MQTT_private_feeds.h
 
 The details on the contents of these files are in the .ino file comments.
 
-## External Libraries ##
-* [Adafruit_MQTT](https://github.com/adafruit/Adafruit_MQTT_Library)  
+## External Libraries
+
+- [Adafruit_MQTT](https://github.com/adafruit/Adafruit_MQTT_Library)  
   *See the [Adafruit_MQTT][8] readme file for changes necessary to support long `connect` messages, which are generated when using the [Cayenne][9] platform.*
-* [WIZnet Ethernet](https://github.com/Wiznet/WIZ_Ethernet_Library)  
+- [WIZnet Ethernet](https://github.com/Wiznet/WIZ_Ethernet_Library)  
   *[Modifications](./Ethernet.md) are required to work with Energia and fix a memory leak.*
-* [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
+- [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
   _The NewhavenOLED library is only needed if you plan to use an external OLED
   display as mentioned above._
 
-## References ##
-* [MSP430FR6989 LaunchPad][1]
-* [CC110L BoosterPack][2]
-* [Seeed Studio W5200 Ethernet Shield][3]
-* [Adafruit IO][4]
-* [ThingSpeak][5] IoT Platform
-* [Cayenne][9] IoT Platform
+## References
 
-## License ##
+- [MSP430FR6989 LaunchPad][1]
+- [CC110L BoosterPack][2]
+- [Seeed Studio W5200 Ethernet Shield][3]
+- [ThingSpeak][5] IoT Platform
+
+## License
+
 The software and other files in this repository are released under what is commonly called the [MIT License][100]. See the file [`LICENSE.txt`][101] in this repository.
 
 [1]: http://www.ti.com/tool/MSP-EXP430FR6989
@@ -57,3 +59,4 @@ The software and other files in this repository are released under what is commo
 [9]: https://cayenne.mydevices.com
 [100]: https://choosealicense.com/licenses/mit/
 [101]: ./LICENSE.txt
+[200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
