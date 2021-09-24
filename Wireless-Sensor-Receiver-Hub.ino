@@ -61,6 +61,9 @@
                            General code cleanup
    4.8 - 02/02/19 - A.T. - Display outdoor temp on built-in LCD.
    4.9 - 02/02/19 - A.T. - Display outdoor weather station battery level on built-in LCD.
+   5.0 - 09/22/21 - A.T. - Update to use Thingspeaks updated MQTT3 API in R2021a: Use per-device authentication instead of user authentication
+                           In addition to code changes and updated comments in this file, API-specific changes were made in
+                           MQTT_private_config.h and MQTT_private_feeds.h
 */
 
 /**
@@ -215,6 +218,8 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 #endif
 // -----------------------------------------------------------------------------
 #ifdef ETHERNET_ENABLED
+//#define MQTT_DEBUG
+//#define MQTT_ERROR
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include <Ethernet.h>
@@ -225,29 +230,35 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 /* The MQTT_private_config.h file needs to include the following definitions
    specific to your configuration:
      byte mac[] = {6 byte MAC address for ethernet card};
-     #define AIO_SERVER      "address of your MQTT server (e.g. io.adafruit.com)"
-     #define AIO_SERVERPORT  Port number of your MQTT server, e.g. 1883
-     #define AIO_USERNAME    "Username for MQTT server account"
-     #define AIO_KEY         "MQTT key required for your MQTT server account"
-   If using ThingSpeak, then WRITE keys for each channel may also be #defined here.
+     #define TS_SERVER        "address of your MQTT server (e.g. io.adafruit.com)"
+     #define TS_SERVERPORT    Port number of your MQTT server, e.g. 1883
+     #define TS_CLIENTID      "Client ID for your ThingSpeak MQTT device (typically same as Username)"
+     #define AIO_USERNAME    "Username for your ThingSpeak MQTT device"
+     #define AIO_KEY         "Password for your ThingSpeak MQTT device"
+   Also, #define CHANNEL_IDs for each of your sensors
 */
 EthernetClient client_ts;
-Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_USERNAME, TS_KEY);
+Adafruit_MQTT_Client thingspeak(&client_ts, TS_SERVER, TS_SERVERPORT, TS_CLIENTID, TS_USERNAME, TS_KEY);
 #define PAYLOADSIZE 132
 char payload[PAYLOADSIZE];    // MQTT payload string
 #define FIELDBUFFERSIZE 20
 char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single field of payload string
+
 /***** MQTT publishing feeds *****
    Each feed/channel that you wish to publish needs to be defined.
-     - ThingSpeak Channels follow the form: channels/<CHANNEL_ID>/publish/<WRITE_API_KEY>, for example:
+     - ThingSpeak Channel topics follow the form: channels/<CHANNEL_ID>/publish, for example:
          Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
-                                        "channels/" CHANNEL_ID "/publish/" CHANNEL_WRITE_API_KEY);
+                                        "channels/" CHANNEL_ID "/publish");
          See https://www.mathworks.com/help/thingspeak/publishtoachannelfeed.html
+         See https://www.mathworks.com/help/thingspeak/release-notes.html for changes to the MQTT3
+         interface included in R2021a release. The key change is that instead of using a per-channel
+         API key, each publishing device has it's own device credentials.
    The file "MQTT_private_feeds.h" needs to include the feed/channel definitions
    specific to your configuration.
 */
 #include "MQTT_private_feeds.h"
 #endif
+
 // -----------------------------------------------------------------------------
 
 /* -----------------------
@@ -384,6 +395,7 @@ void setup()
 #endif
   SKETCH_PRINTLN(F(" "));
   SKETCH_PRINTLN(F("Sensor receiver hub with CC110L."));
+
   delay(500);
 
 #if defined(__MSP430FR6989__)
@@ -437,7 +449,7 @@ void setup()
 
 #ifdef LCD_ENABLED
   for (int i = 0; i < LAST_ADDRESS + 1; i++) {
-    temperatures[i] = 0;
+  temperatures[i] = 0;
     batteries[i] = 0;
     lastTime[i] = 0;
   }
