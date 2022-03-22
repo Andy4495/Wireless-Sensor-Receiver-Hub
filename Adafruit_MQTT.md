@@ -55,8 +55,11 @@ Below are instructions for fixing the problem for the connect message. Similar u
 
 [1]: http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
 [2]: https://github.com/adafruit/Adafruit_MQTT_Library
+<!-- markdown-link-check-disable-next-line -->
 [3]: https//io.adafruit.com
 [4]: https://thingspeak.com/
 [5]: https://cayenne.mydevices.com
 [6]: https://github.com/adafruit/Adafruit_MQTT_Library/issues/79
 [200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
+
+[//]: # (The Adafruit IO link returns a 400 error even though it resolves to a valid web page, so ignore checking that URL.)
