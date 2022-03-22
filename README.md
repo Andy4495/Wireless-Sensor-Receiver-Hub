@@ -69,7 +69,7 @@ In addition to the code changes included in this repository, some minor changes 
 ## References
 
 - [MSP430FR6989 LaunchPad][1]
-- [CC110L BoosterPack][2]
+- CC110L BoosterPack [Quick Start Guide][2]
 - [Seeed Studio W5200 Ethernet Shield][3]
 - [ThingSpeak][5] IoT Platform
 - ThingSpeak [release notes][10].
@@ -79,7 +79,7 @@ In addition to the code changes included in this repository, some minor changes 
 The software and other files in this repository are released under what is commonly called the [MIT License][100]. See the file [`LICENSE.txt`][101] in this repository.
 
 [1]: http://www.ti.com/tool/MSP-EXP430FR6989
-[2]: http://www.ti.com/tool/430BOOST-CC110L
+[2]: https://www.ti.com/lit/ml/swru312b/swru312b.pdf
 [3]: http://wiki.seeedstudio.com/Ethernet_Shield_V2.0/
 [4]: https://io.adafruit.com/
 [5]: https://thingspeak.com/

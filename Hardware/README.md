@@ -19,7 +19,7 @@
 ### CC110L BoosterPack
 
 - Low-power wireless transceiver operating on 902-928MHz ISM band
-- [Technical Info](http://www.ti.com/tool/430BOOST-CC110L)
+- [Quick Start Guide](https://www.ti.com/lit/ml/swru312b/swru312b.pdf)
 
 ### SeeedStudio W5200 Ethernet Shield
 
@@ -39,7 +39,7 @@ This will directly connect the 5V pin to the 3.3V power rail on the board.
 
 ![Top of board with, with regulator and capacitor modifications.](../jpg/5200-top.jpg)
 
-Because of the mis-aligned header on the [Arduino UNO layout](http://forum.arduino.cc/index.php/topic,22737.0.html#13), pin D10 on the shield is not easily accessible from a standard 0.1" perfboard. So make the signal accessible on an unused pin on one of the standard-spaced headers.
+Because of the mis-aligned header on the [Arduino UNO layout](https://forum.arduino.cc/t/making-pwm-pins-together/22809/14), pin D10 on the shield is not easily accessible from a standard 0.1" perfboard. So make the signal accessible on an unused pin on one of the standard-spaced headers.
 
 - Solder a jumper wire (the bottom of the board works best) from pin D10 to pin A2.
 
@@ -53,7 +53,7 @@ Besides a properly-sized perfboard, you will need:
 - Male headers: 8-pin, 6-pin, and 10-pin for the shield connection and two 10-pin for the LaunchPad connection
 - USB Micro [break-out board](https://www.sparkfun.com/products/12035)
   - This is for simplicity of using a standard USB wall-wart power supply. A 2-pin header could also be used, depending on your needs.
-- Traco [TSR 1-2433 DC-DC converter](https://www.mouser.com/ProductDetail/TRACO-Power/TSR-1-2433/?qs=ckJk83FOD0Wr1ojFRJK1OQ%3D%3D)
+- Traco [TSR 1-2433 DC-DC converter](https://www.mouser.com/datasheet/2/687/tsr1-537631.pdf)
   - A cheaper 3.3V linear regulator that can provide at least 250 mA could also be used, but is not as efficient as the Traco module.
 
 - Bottom
@@ -64,3 +64,5 @@ Besides a properly-sized perfboard, you will need:
 
 [1]: ./Shield-LaunchPad-Interface.pdf
 [200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
+
+[//]: # (Dead link to old forum post about misaligned Arduino headers: http://forum.arduino.cc/index.php/topic,22737.0.html#13)

@@ -10,12 +10,25 @@ Additional changes are also required to fix a memory leak in sketches where Ethe
 
 ## Installing and Modifying the WIZnet Ethernet Library for MSP430
 
+### Issue with original procedure
+
+The "additional files" installed as part of the original procedure listed below are no longer available.
+
+Seeed Studio provides an [Ethernet library][3] for the W5200 card. I have not tested the Seeed library, and therefore need to confirm:
+
+* Will the Seeed library install using the standard Arduino IDE Library Manager installation procedure?
+* Are any updates needed for the Seeed library to work with MSP430?
+* Does the Seeed library have the memory leak mentioned below?
+* Does the Seeed library have the `SS` symbol definition issue mentioned below?
+
+### Original procedure to install and update Ethernet library for MSP430
+
 1. Download [library ZIP][1] from GitHub.
 2. Navigate to "WIZ_Ethernet_Library-master/Arduino IDE 1.5.x" inside the ZIP folder.
 3. Copy the "Ethernet" folder to your libraries folder inside your sketch folder.
 4. Navigate to "WIZ_Ethernet_Library-master/Arduino IDE 1.0.x/Ethernet" inside the ZIP folder.
 5. Copy the entire Examples folder as-is to the Ethernet folder which was copied to the libraries folder above.
-6. Download and extract [additional files][2] from Wiznet.
+6. Download and extract additional files from Wiznet. **Note that these files no longer appear to be available.**
 7. Copy the individual "additional files" into the "src" folder of the Ethernet library you copied above.
 
     Note: "IPAddress.h" and "IPAddress.cpp" may not be needed and may cause a conflict when compiling. If you get an error related to "IPAddress" when compiling, then delete these two files.
@@ -102,10 +115,12 @@ Additional checks can be added to make sure that `_dhcp` is non-null before usin
 
 ## Notes on the library
 
-* While the file w5200.cpp defines a symbol "SPI_CS", other parts of the code use the internally-defined "SS" symbol as the SPI chip select.
+* While the file w5200.cpp defines a symbol `SPI_CS`, other parts of the code use the internally-defined `SS` symbol as the SPI chip select.
 * A better approach would be to use a single symbol and require that its value be defined in the application code (e.g. the constructor), not hardcoded in the library. This would allow the application to decide on the chip select pin, not hardcoded in the library
 * The library currently hard codes the spi clock divider as DIV8. It may be possible to speed this up with additional testing.
 
 [1]: https://github.com/Wiznet/WIZ_Ethernet_Library
-[2]: http://wizwiki.net/wiki/lib/exe/fetch.php?media=osh:ioshield-l:updatelib:additional_files_from_arduino.zip
+[3]: https://github.com/Seeed-Studio/Ethernet_Shield_W5200
 [200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
+
+[//]: # (Dead link - previously pointed to "additional files" needed for Ethernet library: http://wizwiki.net/wiki/lib/exe/fetch.php?media=osh:ioshield-l:updatelib:additional_files_from_arduino.zip)
