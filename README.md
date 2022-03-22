@@ -1,5 +1,7 @@
 # Wireless Sensor Receiver Hub
 
+[![Check Markdown Links](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/CheckMarkdownLinks.yml/badge.svg)](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/CheckMarkdownLinks.yml)
+
 ![Fully assembled Hub: Ethernet Shield (bottom), Shield-LaunchPad Interface (middle-bottom), MSP-EXP430FR6989 LaunchPad (middle-top), and CC110L BoosterPack (top).](jpg/hub.jpg)
 
 This sketch is an example of a wireless receiver hub which receives sensor readings from various low-power, battery-operated remote sensors. These sensors use a short-range, low-power communication protocol implemented with CC110L [BoosterPack][2] from Texas Instruments. The hub receives periodic readings from the remote sensors and forwards the data using MQTT to the [ThingSpeak][5] IoT platform over ethernet.
