@@ -55,8 +55,7 @@ Below are instructions for fixing the problem for the connect message. Similar u
 
 [1]: http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
 [2]: https://github.com/adafruit/Adafruit_MQTT_Library
-<!-- markdown-link-check-disable-next-line -->
-[3]: https//io.adafruit.com
+[3]: https://io.adafruit.com
 [4]: https://thingspeak.com/
 [5]: https://cayenne.mydevices.com
 [6]: https://github.com/adafruit/Adafruit_MQTT_Library/issues/79
