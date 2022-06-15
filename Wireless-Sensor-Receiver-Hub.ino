@@ -990,7 +990,7 @@ void buildStatusString() {
   timeSince = (millis() - lastTime[displayTimeoutCount]) / 1000 / 60;
   if (timeSince > 9999) timeSince = 9999;
   // Print # minutes since last message received
-  splen = snprintf((char*)oled_text[1], OLED_COLS + 1, "Last: %4d mins", timeSince);
+  splen = snprintf((char*)oled_text[1], OLED_COLS + 1, "Last: %4lu mins", timeSince);
   // Pad the rest of the string with spaces.
   for (int i = splen; i < OLED_COLS; i++) {
     oled_text[1][i] = ' ';
@@ -1083,7 +1083,6 @@ void BuildPayload(char* msgBuffer, char* dataFieldBuffer, int fieldNum, const ch
 void displayTempOnLCD(int T) {
 #define DISPLAYSIZE 6
   char tempChar[DISPLAYSIZE + 1];
-  int tempLen;
   int tempSign;
   int Tprime;
 
