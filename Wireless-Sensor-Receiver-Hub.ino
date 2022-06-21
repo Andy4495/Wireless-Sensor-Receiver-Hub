@@ -100,14 +100,11 @@
 **/
 /**
    EXTERNAL LIBRARIES:
-   - Ethernet: https://github.com/Wiznet/WIZ_Ethernet_Library
-       - Modified to work with Energia
+   - Ethernet: https://github.com/Andy4495/WIZ_Ethernet_Library
+       - Modified to work with Energia/MSP430 compiler
        - #define updates to support Seeed W5200 Ethernet Shield V2.2
-   - MQTT: https://github.com/adafruit/Adafruit_MQTT_Library
-       - Adafruit_MQTT.cpp modified to comment out lines 425-431
-         to remove support for floating point. Specifically,
-         commented out the block starting with:
-            "else if (sub->callback_double != NULL)"
+   - MQTT: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
+       - Modified to work with Energia/MSP430 complier
    - NewhavenOLED: https://github.com/Andy4495/NewhavenOLED
        - Only used if OLED_ENABLED is #defined
 */
@@ -208,7 +205,7 @@ LCD_LAUNCHPAD myLCD;
 #define OLED_SCK  36
 #define OLED_ROWS  2
 #define OLED_COLS 16
-#include <NewhavenOLED.h>
+#include <NewhavenOLED.h>   // https://github.com/Andy4495/NewhavenOLED
 const byte row_address[2] = {0x80, 0xC0};   // DDRAM addresses for rows (2-row models)
 NewhavenOLED oled(OLED_ROWS, OLED_COLS, OLED_SI, OLED_SCK, OLED_CS, NO_PIN);
 byte oled_text[OLED_ROWS][OLED_COLS + 1] =
@@ -222,12 +219,12 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 #ifdef ETHERNET_ENABLED
 //#define MQTT_DEBUG
 //#define MQTT_ERROR
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
-#include <Ethernet.h>
-#include <EthernetClient.h>
-#include <Dns.h>
-#include <Dhcp.h>
+#include "Adafruit_MQTT.h"        // https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
+#include "Adafruit_MQTT_Client.h" // https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
+#include <Ethernet.h>             // https://github.com/Andy4495/WIZ_Ethernet_Library
+#include <EthernetClient.h>       // https://github.com/Andy4495/WIZ_Ethernet_Library
+#include <Dns.h>                  // https://github.com/Andy4495/WIZ_Ethernet_Library
+#include <Dhcp.h>                 // https://github.com/Andy4495/WIZ_Ethernet_Library
 
 /* The MQTT_private_config.h file needs to include the following definitions
    specific to your configuration:

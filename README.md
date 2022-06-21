@@ -25,37 +25,35 @@ See the [Hardware](./Hardware) folder for specific hardware details.
 
 Please read the sketch comments for details on the software operation.
 
-## External Header Files
+## Header Files for User-Specific Info
 
-In order to compile the code, two header files are needed:
+In order to compile the code, an additional header file is needed: `MQTT_private_config.h`.
 
-- MQTT_private_config.h
-- MQTT_private_feeds.h
+A template of the file named `MQTT_private_config-template` is included in the repo. This file should be updated with data specific to your configuration and then be copied to `MQTT_private_config.h`.
 
-The details on the contents of these files are explained in the comments.
-
-These files are not included in this repository because they contain secrets specific to your installation.
+In addition, `MQTT_publishing_feeds.h` should be updated with channel information specific to your application.
 
 ## Thingspeak API updates
 
 ThingSpeak released an update in July 2021 ([R2021a][10]) which changed how MQTT API authentication works. Previously, the MQTT connection was authenticated using your ThingSpeak username and MQTT API key. This method has now been deprecated, and the new method uses a separate MQTT device client ID and password to authenticate. This also eliminates the need for API Keys in the MQTT topic.
 
-In addition to the code changes included in this repository, some minor changes are also required in the "secrets" files that are not included with this repo:
+In addition to the code changes included in this repository, some minor changes were also required in the "secrets" files that are not included with this repo:
 
 - In `MQTT_private_config.h`:
   - Update `TS_USERNAME` and `TS_KEY` definitions with the new MQTT device Username and Password credentials
   - Change `TS_SERVER` definition to `mqtt3.thingspeak.com`
   - Add `#define TS_CLIENTID` with your MQTT device Client ID (which is typically the same as the Username)
-- In `MQTT_private_feeds.h`
+- In `MQTT_publishing_feeds.h` (previously named `MQTT_private_feeds.h`):
   - Remove the API keys from the `Adafruit_MQTT_Publish` constructors.
   - Also make sure there is no slash (`/`) after `publish` in each of the constructors (that is, the MQTT "topic" should be of the form `channels/<channel_ID>/publsh` and NOT end in a slash)
 
 ## External Libraries
 
-- [Adafruit_MQTT](https://github.com/adafruit/Adafruit_MQTT_Library)  
-  *See the Adafruit_MQTT [readme][8] for changes necessary to support long `connect` messages, which are generated when using the [Cayenne][9] platform.*
-- [WIZnet Ethernet](https://github.com/Wiznet/WIZ_Ethernet_Library)  
-  *[Modifications](./Ethernet.md) are required to work with Energia and fix a memory leak.*
+- [Modified version][15] of [Adafruit MQTT Library][16] version 1.3.0.
+  - A specific modified version of the library is needed due to changes to the Adafruit MQTT Library API made after this code was created, and also to support some differences in the MSP GCC compiler versus the AVR compiler.
+  - See the Adafruit_MQTT [readme][8] for details on the modifications.
+- [Modified version][17] of the [WIZnet Ethernet Library][18].
+  - See the Ethernet [readme](./Ethernet.md) for details on the modifications.
 - [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
   *The NewhavenOLED library is only needed if you plan to use an external OLED display as mentioned above.*
 
@@ -90,6 +88,10 @@ The software and other files in this repository are released under what is commo
 [12]: https://github.com/Andy4495/Outdoor-Weather-Sensor
 [13]: https://github.com/Andy4495/Sensor-Repeater
 [14]: https://github.com/Andy4495/MSP430LowPowerTempSensor
+[15]: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
+[16]: https://github.com/adafruit/Adafruit_MQTT_Library
+[17]: https://github.com/Andy4495/WIZ_Ethernet_Library
+[18]: https://github.com/Wiznet/WIZ_Ethernet_Library
 [100]: https://choosealicense.com/licenses/mit/
 [101]: ./LICENSE.txt
 [200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub

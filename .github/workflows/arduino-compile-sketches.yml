@@ -32,8 +32,9 @@ jobs:
           enable-warnings-report: true
           libraries: |
             - source-path: ./
-            - name Adafruit MQTT Library
+            - source-url: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0.git
             - source-url: https://github.com/Andy4495/NewhavenOLED.git
+            - source-url: https://github.com/Andy4495/WIZ_Ethernet_Library.git
       - name: Print the job summary
         if: ${{ inputs.message != null }}
         run: |
