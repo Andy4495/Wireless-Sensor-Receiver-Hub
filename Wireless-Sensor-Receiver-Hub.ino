@@ -65,6 +65,7 @@
                            In addition to code changes and updated comments in this file, API-specific changes were made in
                            MQTT_private_config.h and MQTT_private_feeds.h
    5.1 - 02/02/22 - A.T. - Clean up some comments
+   5.2 - 06/20/22 - A.T. - Change header name
 */
 
 /**
@@ -231,9 +232,9 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 /* The MQTT_private_config.h file needs to include the following definitions
    specific to your configuration:
      byte mac[] = {6 byte MAC address for ethernet card};
-     #define TS_SERVER        "address of your MQTT server (e.g. io.adafruit.com)"
-     #define TS_SERVERPORT    Port number of your MQTT server, e.g. 1883
-     #define TS_CLIENTID      "Client ID for your ThingSpeak MQTT device (typically same as Username)"
+     #define TS_SERVER      "address of your MQTT server (e.g. mqtt3.thingspeak.com)"
+     #define TS_SERVERPORT  Port number of your MQTT server, e.g. 1883
+     #define TS_CLIENTID    "Client ID for your ThingSpeak MQTT device (typically same as Username)"
      #define TS_USERNAME    "Username for your ThingSpeak MQTT device"
      #define TS_KEY         "Password for your ThingSpeak MQTT device"
    Also, #define CHANNEL_IDs for each of your sensors
@@ -248,7 +249,7 @@ char payload[PAYLOADSIZE];    // MQTT payload string
 char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single field of payload string
 
 /***** MQTT feeds *****
-   MQTT_private_feeds.h needs to define each feed/channel that you wish to publish
+   MQTT_publishing_feeds.h needs to define each feed/channel that you wish to publish
    These feed/channel definitions are specific to your configuration
      - ThingSpeak Channel topics follow the form: channels/<CHANNEL_ID>/publish, for example:
          Adafruit_MQTT_Publish myChannel = Adafruit_MQTT_Publish(&mqtt,
@@ -258,7 +259,7 @@ char fieldBuffer[FIELDBUFFERSIZE];  // Temporary buffer to construct a single fi
          interface included in R2021a release. The key change is that instead of using a per-channel
          API key, each publishing device has it's own device credentials.
 */
-#include "MQTT_private_feeds.h"
+#include "MQTT_publishing_feeds.h"
 #endif
 
 // -----------------------------------------------------------------------------
