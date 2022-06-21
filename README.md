@@ -1,5 +1,6 @@
 # Wireless Sensor Receiver Hub
 
+[![Arduino Compile Sketches](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/arduino-compile-sketches.yml/badge.svg)](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/arduino-compile-sketches.yml)
 [![Check Markdown Links](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/CheckMarkdownLinks.yml/badge.svg)](https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub/actions/workflows/CheckMarkdownLinks.yml)
 
 ![Fully assembled Hub: Ethernet Shield (bottom), Shield-LaunchPad Interface (middle-bottom), MSP-EXP430FR6989 LaunchPad (middle-top), and CC110L BoosterPack (top).](jpg/hub.jpg)
