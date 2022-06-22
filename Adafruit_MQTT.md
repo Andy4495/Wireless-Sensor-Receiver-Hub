@@ -4,19 +4,27 @@ The Wireless Sensor Receiver Hub makes use of the Adafruit [MQTT library][2]. Th
 
 While follow-on iterations of the project moved to [ThingSpeak][4], it was convenient to continue using the Adafruit library and therefore limit the code changes necessary to connect to the ThnkSpeak servers.
 
-However, while trying to use the [Cayenne][5] IoT platform, a shortcoming in the Adafruit MQTT libraries became apparent: the library does not support MQTT messages longer than 127 bytes. In particular, it only supports a single-byte Remaining Length field instead of the [protocol-defined][1] variable-length sized field. The Cayenne API makes use of particularly long username, password, and clientID strings, all of which are required as part of the `connect` message. This results in the message being 128 bytes long, which is then encoded incorrectly by the Adafruit library.
+Adafruit has since made some API changes which are incompatible with this sketch. In addition, a minor change is needed because the MSP430 compiler does not support the `atof()` function.
 
-This is [documented][6] on the Adafruit GitHub site, and as of this writing, there is no ETA for a fix from Adafruit.
+For this reason, I have cloned version 1.3.0 of the Adafruit MQTT library and updated it so it works with the MSP430 compiler. This [specific cloned version][7] is required to compile the Wireless-Sensor-Receiver-Hub.ino sketch.
 
-Below are instructions for fixing the problem for the connect message. Similar updates are probably also necessary for the `subscribe` and messages. The `publish` message handler includes code that appears to properly handle the Remaining Length field.
+## Long Messages
 
-## Modifications to Adafruit MQTT library
+While trying to use the [Cayenne][5] IoT platform, a shortcoming in the Adafruit MQTT library became apparent: the library does not support MQTT messages longer than 127 bytes. In particular, it only supports a single-byte Remaining Length field instead of the [protocol-defined][1] variable-length sized field. The Cayenne API makes use of particularly long username, password, and clientID strings, all of which are required as part of the `connect` message. This results in the message being 128 bytes long, which is then encoded incorrectly by the Adafruit library.
 
-1. Install the library as you normally would. This can be done by using the library manager in the Arduino IDE, or manually installing the library by downloading the ZIP from GitHub.
-2. Edit the file `Adafruit_MQTT.cpp` and replace lines 626 - 628:  
+This is [documented][6] on the Adafruit GitHub site. That particular issue does not have an ETA for a fix.
+
+Since I am now using the ThingSpeak IoT platform instead of Cayenne, I am not running into this issue with my current setup. However, the changes required are outlined below if needed.
+
+## Modifications to Adafruit MQTT Library to Support Long Messages
+
+These changes are specific to version 1.3.0 of the Adafruit MQTT Library. Other versions of the library may be at different line numbers or have the problem fixed.
+
+1. Edit the file `Adafruit_MQTT.cpp` and replace lines 660 - 662:  
 
    ```cpp
    len = p - packet;  
+
    packet[1] = len-2;  // don't include the 2 bytes of fixed header data
    ```
 
@@ -36,13 +44,15 @@ Below are instructions for fixing the problem for the connect message. Similar u
    }
    ```
 
-3. Certain IoT APIs create longer messages (e.g.[Cayenne][5], so you may also want to increase the packet buffer size. Note that this causes the library to use more RAM. The buffer size is defined in `Adafruit_MQTT.h`:
+2. Certain IoT APIs create longer messages (e.g.[Cayenne][5], so you may also want to increase the packet buffer size. Note that this causes the library to use more RAM. The buffer size is defined in `Adafruit_MQTT.h` line 110:
 
    ```cpp
-   #define MAXBUFFERSIZE 150  
+   #define MAXBUFFERSIZE (150) 
    ```
 
-   In my implementation, I changed the default value of 150 to 200.
+   In my implementation, I increased the buffer size from 150 to 200.
+
+Similar updates are probably also necessary for the `subscribe` and messages. The `publish` message handler includes code that appears to properly handle the Remaining Length field.
 
 ## References
 
@@ -59,6 +69,7 @@ Below are instructions for fixing the problem for the connect message. Similar u
 [4]: https://thingspeak.com/
 [5]: https://cayenne.mydevices.com
 [6]: https://github.com/adafruit/Adafruit_MQTT_Library/issues/79
+[7]: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
 [200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
 
-[//]: # (The Adafruit IO link returns a 400 error even though it resolves to a valid web page, so ignore checking that URL.)
+[//]: # ( )
