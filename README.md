@@ -16,9 +16,9 @@ The code is not very generic and is currently written to support two types of se
 
 The current design sends the received sensor readings to the [ThingSpeak][5] IOT platform. Previous iterations used [Adafruit's][4] and [Cayenne's][9] platforms.
 
-The built-in LCD display on the LaunchPad is used to display current temperature and battery level from the weather station sensor, plus connection status with the MQTT server.
+The built-in LCD display on the LaunchPad is used to display current temperature and battery level from the weather station sensor, plus connection status with the MQTT server (the antenna symbol).
 
-An additional external OLED display is also supported, and can be used to print miscellaneous status information. This OLED display is optional and not necessary for basic receiver hub operation.
+An external OLED display is also supported, and can be used to print miscellaneous status information. This OLED display is optional and not necessary for basic receiver hub operation.
 
 Additional sensors and changes to the data structures of the existing sensors would require changes to this sketch. Feel free to use this as a starting point, but do not expect it to work as-is for your application.
 
@@ -30,23 +30,17 @@ Please read the sketch comments for details on the software operation.
 
 In order to compile the code, an additional header file is needed: `MQTT_private_config.h`.
 
-A template of the file named `MQTT_private_config-template` is included in the repo. This file should be updated with data specific to your configuration and then be copied to `MQTT_private_config.h`.
+A template of the file named `MQTT_private_config-template` is included in the repo. This file should be updated with data specific to your configuration and then copied to `MQTT_private_config.h`.
 
 In addition, `MQTT_publishing_feeds.h` should be updated with channel information specific to your application.
 
 ## Thingspeak API updates
 
-ThingSpeak released an update in July 2021 ([R2021a][10]) which changed how MQTT API authentication works. Previously, the MQTT connection was authenticated using your ThingSpeak username and MQTT API key. This method has now been deprecated, and the new method uses a separate MQTT device client ID and password to authenticate. This also eliminates the need for API Keys in the MQTT topic.
+ThingSpeak updated their MQTT interface in July 2021 with release [R2021a][10], which changed how MQTT API authentication works.
 
-In addition to the code changes included in this repository, some minor changes were also required in the "secrets" files that are not included with this repo:
+Instead of authenticating using your ThingSpeak username and MQTT API key, the updated method uses a separate MQTT device client ID and password. In addition, the ThingSpeak MQTT server is now named `mqtt3.thingspeak.com`.
 
-- In `MQTT_private_config.h`:
-  - Update `TS_USERNAME` and `TS_KEY` definitions with the new MQTT device Username and Password credentials
-  - Change `TS_SERVER` definition to `mqtt3.thingspeak.com`
-  - Add `#define TS_CLIENTID` with your MQTT device Client ID (which is typically the same as the Username)
-- In `MQTT_publishing_feeds.h` (previously named `MQTT_private_feeds.h`):
-  - Remove the API keys from the `Adafruit_MQTT_Publish` constructors.
-  - Also make sure there is no slash (`/`) after `publish` in each of the constructors (that is, the MQTT "topic" should be of the form `channels/<channel_ID>/publsh` and NOT end in a slash)
+The code and header files have been updated with these changes.
 
 ## External Libraries
 
@@ -58,7 +52,7 @@ In addition to the code changes included in this repository, some minor changes 
 - [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
   *The NewhavenOLED library is only needed if you plan to use an external OLED display as mentioned above.*
 
-## Example Remote Sensors
+## Supported Remote Sensors
 
 - [MSP430 Low Power Temperature Sensor][14]
 - [MSP430 Temperature Sensor with Display][11]

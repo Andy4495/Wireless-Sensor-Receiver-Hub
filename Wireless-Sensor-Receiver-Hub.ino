@@ -66,6 +66,7 @@
                            MQTT_private_config.h and MQTT_private_feeds.h
    5.1 - 02/02/22 - A.T. - Clean up some comments
    5.2 - 06/20/22 - A.T. - Change header name
+   5.3 - 06/25/22 - A.T. - Fix issue with LCD conditional compilation if LCD disabled
 */
 
 /**
@@ -580,8 +581,10 @@ void loop()
     myLCD.showSymbol(LCD_SEG_RADIO, false);
 #endif
   }
+#ifdef LCD_ENABLED
   else
     myLCD.showSymbol(LCD_SEG_RADIO, true);
+#endif
 #endif
 } // loop()
 
