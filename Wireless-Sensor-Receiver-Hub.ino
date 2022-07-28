@@ -222,8 +222,8 @@ int displayTimeoutCount = DISPLAY_TIMEOUT;
 //#define MQTT_ERROR
 #include "Adafruit_MQTT.h"        // https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
 #include "Adafruit_MQTT_Client.h" // https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0
-#include <Ethernet.h>             // https://github.com/Andy4495/WIZ_Ethernet_Library
-#include <EthernetClient.h>       // https://github.com/Andy4495/WIZ_Ethernet_Library
+#include <WIZ-Ethernet.h>             // https://github.com/Andy4495/WIZ_Ethernet_Library
+#include <WIZ-EthernetClient.h>       // https://github.com/Andy4495/WIZ_Ethernet_Library
 #include <Dns.h>                  // https://github.com/Andy4495/WIZ_Ethernet_Library
 #include <Dhcp.h>                 // https://github.com/Andy4495/WIZ_Ethernet_Library
 
