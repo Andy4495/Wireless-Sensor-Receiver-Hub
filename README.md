@@ -44,11 +44,8 @@ The code and header files have been updated with these changes.
 
 ## External Libraries
 
-- [Modified version][15] of [Adafruit MQTT Library][16] version 1.3.0.
-  - A specific modified version of the library is needed due to changes to the Adafruit MQTT Library API made after this code was created, and also to support some differences in the MSP GCC compiler versus the AVR compiler.
-  - See the Adafruit_MQTT [readme][8] for details on the modifications.
-- [Modified version][17] of the [WIZnet Ethernet Library][18].
-  - See the Ethernet [readme](./Ethernet.md) for details on the modifications.
+- [Modified version][15] of Adafruit MQTT Library version 1.3.0
+- [Modified version][17] of the WIZnet Ethernet Library
 - [NewhavenOLED](https://github.com/Andy4495/NewhavenOLED)  
   *The NewhavenOLED library is only needed if you plan to use an external OLED display as mentioned above.*
 
@@ -65,7 +62,9 @@ The code and header files have been updated with these changes.
 - CC110L BoosterPack [Quick Start Guide][2]
 - [Seeed Studio W5200 Ethernet Shield][3]
 - [ThingSpeak][5] IoT Platform
-- ThingSpeak [release notes][10].
+- ThingSpeak [release notes][10]
+- Original [WIZnet Ethernet Library][18]
+- Original [Adafruit MQTT Library][16]
 
 ## License
 
