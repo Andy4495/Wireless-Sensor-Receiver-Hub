@@ -75,7 +75,6 @@ The software and other files in this repository are released under what is commo
 [3]: http://wiki.seeedstudio.com/Ethernet_Shield_V2.0/
 [4]: https://io.adafruit.com/
 [5]: https://thingspeak.com/
-[8]: ./Adafruit_MQTT.md
 [9]: https://cayenne.mydevices.com
 [10]: https://www.mathworks.com/help/thingspeak/release-notes.html
 [11]: https://github.com/Andy4495/MSP430TempSensorWithDisplay
@@ -88,4 +87,4 @@ The software and other files in this repository are released under what is commo
 [18]: https://github.com/Wiznet/WIZ_Ethernet_Library
 [100]: https://choosealicense.com/licenses/mit/
 [101]: ./LICENSE.txt
-[200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
+[//]: # ([200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub)

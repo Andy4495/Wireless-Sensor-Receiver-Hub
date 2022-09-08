@@ -63,6 +63,6 @@ Besides a properly-sized perfboard, you will need:
 - ![Top of interface board.](../jpg/interface-top.jpg)
 
 [1]: ./Shield-LaunchPad-Interface.pdf
-[200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub
+[//]: # ([200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub)
 
 [//]: # (Dead link to old forum post about misaligned Arduino headers: http://forum.arduino.cc/index.php/topic,22737.0.html#13)
