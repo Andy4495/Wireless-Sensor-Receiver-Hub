@@ -53,6 +53,7 @@ The code and header files have been updated with these changes.
 
 - [MSP430 Low Power Temperature Sensor][14]
 - [MSP430 Temperature Sensor with Display][11]
+- [MSP430 Temperature Sensor with Built-in LCD][19]
 - [Outdoor Weather Sensor][12]
 - [Sensor Repeater][13]
 
@@ -85,6 +86,7 @@ The software and other files in this repository are released under what is commo
 [16]: https://github.com/adafruit/Adafruit_MQTT_Library
 [17]: https://github.com/Andy4495/WIZ_Ethernet_Library
 [18]: https://github.com/Wiznet/WIZ_Ethernet_Library
+[19]: https://github.com/Andy4495/MSP430TempSensorLCD
 [100]: https://choosealicense.com/licenses/mit/
 [101]: ./LICENSE.txt
 [//]: # ([200]: https://github.com/Andy4495/Wireless-Sensor-Receiver-Hub)
