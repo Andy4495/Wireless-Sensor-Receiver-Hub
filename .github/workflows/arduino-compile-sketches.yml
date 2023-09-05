@@ -13,44 +13,27 @@ on:
 
 jobs:
   compile-sketches: 
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@main
-      - name: Clone compile-sketches to get python version (using nektos/act locally)
-        if: ${{ env.ACT }}
-        run: cd /tmp; git clone 'https://github.com/arduino/compile-sketches'
-      - name: setup-python (when running locally for nektos/act compatibility)
-        if: ${{ env.ACT }}
-        uses: actions/setup-python@v4
-        with:
-          python-version-file: /tmp/compile-sketches/.python-version
-      - name: Install Poetry (when running locally for nektos/act compatibility)
-        if: ${{ env.ACT }}
-        uses: snok/install-poetry@v1
-      - name: Install pipx (when running locally for nektos/act compatibility)
-        if: ${{ env.ACT }}
-        run: pip install pipx
-      - name: Copy dummy secrets file.
-        run: |
-          cp MQTT_private_config-template.h MQTT_private_config.h
-      - uses: arduino/compile-sketches@v1
-        with:
-          fqbn: 'energia:msp430:MSP-EXP430FR6989LP'
-          platforms: |
-            - name: 'energia:msp430'
-              version: latest
-              source-url: 'https://raw.githubusercontent.com/Andy4495/TI_Platform_Cores_For_Arduino/main/json/package_energia_minimal_MSP_107_index.json'
-          sketch-paths: |
-            - .
-          verbose: true
-          enable-warnings-report: true
-          libraries: |
-            - source-path: ./
-            - source-url: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0.git
-            - source-url: https://github.com/Andy4495/NewhavenOLED.git
-            - source-url: https://github.com/Andy4495/WIZ_Ethernet_Library.git
-      - name: Print the job summary
-        if: ${{ inputs.message }}
-        run: |
-          echo ${{ inputs.message }} >$GITHUB_STEP_SUMMARY
+    strategy:
+      matrix:
+        include:
+          - arch: msp430
+            fqbn: 'energia:msp430:MSP-EXP430FR6989LP'
+            platform-name: 'energia:msp430'
+            platform-sourceurl: 'https://raw.githubusercontent.com/Andy4495/TI_Platform_Cores_For_Arduino/main/json/package_energia_minimal_MSP_107_index.json'
+    
+    name: call-compile-sketches-workflow
+    uses: Andy4495/.github/.github/workflows/arduino-compile-sketches.yml@main
+    with:
+      message: ${{ inputs.message }}
+      copyfile: 
+      fqbn: ${{ matrix.fqbn }}
+      platform-name: ${{ matrix.platform-name }}
+      platform-sourceurl: ${{ matrix.platform-sourceurl }}
+      platform-version: latest
+      libraries: |
+        - source-path: ./
+        - source-url: https://github.com/Andy4495/Adafruit_MQTT_Library-1.3.0.git
+        - source-url: https://github.com/Andy4495/NewhavenOLED.git
+        - source-url: https://github.com/Andy4495/WIZ_Ethernet_Library.git
+
 
